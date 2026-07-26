@@ -121,6 +121,14 @@ void apply_key_value(AppConfig &config, Section section,
       config.output.type = value;
     } else if (key == "device") {
       config.output.device = value;
+    } else if (key == "pixel_format") {
+      config.output.pixel_format = value;
+    } else if (key == "width") {
+      config.output.width = parse_size(value);
+    } else if (key == "height") {
+      config.output.height = parse_size(value);
+    } else if (key == "fps") {
+      config.output.fps = parse_size(value);
     }
     return;
   case Section::Filters:
@@ -159,6 +167,13 @@ void validate(const AppConfig &config) {
   }
   if (config.output.type.empty()) {
     throw std::invalid_argument("output.type is required");
+  }
+  if (config.output.device.empty()) {
+    throw std::invalid_argument("output.device is required");
+  }
+  if (config.output.width == 0U || config.output.height == 0U ||
+      config.output.fps == 0U) {
+    throw std::invalid_argument("output width, height, and fps are required");
   }
   for (const auto &filter : config.filters) {
     if (filter.type.empty()) {

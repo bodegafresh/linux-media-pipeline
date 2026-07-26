@@ -38,6 +38,10 @@ struct FilterConfig {
 struct OutputConfig {
   std::string type;
   std::string device;
+  std::string pixel_format;
+  std::size_t width;
+  std::size_t height;
+  std::size_t fps;
 };
 
 struct AppConfig {

@@ -15,6 +15,15 @@
 
 namespace {
 
+void print_help() {
+  std::cout
+      << "linux-media-pipeline options:\n"
+      << "  --help           Show this help.\n"
+      << "  --open-capture   Bind the configured GoPro UDP listener.\n"
+      << "  --check-output   Open the configured V4L2 output device.\n"
+      << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n";
+}
+
 lmp::frame::Frame make_test_pattern(std::uint32_t width, std::uint32_t height,
                                     std::uint32_t frame_index) {
   std::vector<std::uint8_t> bytes;
@@ -54,12 +63,19 @@ int main(int argc, char **argv) {
     auto check_output = false;
     auto test_pattern = false;
     for (int index = 1; index < argc; ++index) {
-      if (std::string_view{argv[index]} == "--open-capture") {
+      const auto option = std::string_view{argv[index]};
+      if (option == "--help") {
+        print_help();
+        return 0;
+      }
+      if (option == "--open-capture") {
         open_capture = true;
-      } else if (std::string_view{argv[index]} == "--check-output") {
+      } else if (option == "--check-output") {
         check_output = true;
-      } else if (std::string_view{argv[index]} == "--test-pattern") {
+      } else if (option == "--test-pattern") {
         test_pattern = true;
+      } else {
+        throw std::runtime_error("unknown option: " + std::string{option});
       }
     }
 
@@ -81,13 +97,18 @@ int main(int argc, char **argv) {
       output.open();
     }
     if (test_pattern) {
-      constexpr auto width = 1280U;
-      constexpr auto height = 720U;
-      constexpr auto fps = 30U;
+      if (config.output.pixel_format != "RGB24") {
+        throw std::runtime_error(
+            "test pattern output requires RGB24 pixel_format");
+      }
+      const auto width = static_cast<std::uint32_t>(config.output.width);
+      const auto height = static_cast<std::uint32_t>(config.output.height);
+      const auto fps = static_cast<std::uint32_t>(config.output.fps);
       output.configure_rgb24(width, height, fps);
       std::cout << "linux-media-pipeline " << lmp::version_string()
                 << " streaming test_pattern=true output=" << output.type()
-                << " device=" << output.device() << " format=RGB24"
+                << " device=" << output.device()
+                << " format=" << config.output.pixel_format
                 << " width=" << width << " height=" << height << " fps=" << fps
                 << '\n';
       for (std::uint32_t frame_index = 0;; ++frame_index) {

@@ -1,0 +1,11 @@
+capture:
+  type: gopro_udp
+  address: udp://0.0.0.0:8554
+
+output:
+  type: v4l2
+  device: /dev/video20
+  pixel_format: RGB24
+  width: 1280
+  height: 720
+  fps: 30

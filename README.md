@@ -85,10 +85,20 @@ To verify the virtual camera endpoint for OBS:
 To make OBS show a live validation image, keep this process running:
 
 ```bash
-./build/dev/lmp --test-pattern
+./scripts/run-obs-test-pattern.sh
 ```
 
+To stream the GoPro UDP feed into the virtual camera:
+
+```bash
+./scripts/run-gopro-to-v4l2.sh
+```
+
+The same V4L2 output works in OBS, Google Meet, Zoom, Chrome, and any app that can
+consume a Linux camera device. OBS is only the validation target.
+
 See [OBS Validation](docs/obs.md).
+See [Live Video Bridges](docs/live-video.md).
 
 ## Development
 

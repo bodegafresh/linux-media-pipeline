@@ -117,6 +117,11 @@ int main() {
   ok = expect(config.filters.front().enabled, "identity filter enabled") && ok;
   ok = expect(config.output.type == "v4l2", "output type") && ok;
   ok = expect(config.output.device == "/dev/video20", "output device") && ok;
+  ok = expect(config.output.pixel_format == "RGB24", "output pixel format") &&
+       ok;
+  ok = expect(config.output.width == 1280U, "output width") && ok;
+  ok = expect(config.output.height == 720U, "output height") && ok;
+  ok = expect(config.output.fps == 30U, "output fps") && ok;
 
   auto frame = lmp::frame::Frame{
       2U,

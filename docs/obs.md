@@ -31,7 +31,7 @@ output=v4l2 device=/dev/video20 output_open=true
 Keep the test pattern writer running:
 
 ```bash
-./build/dev/lmp --test-pattern
+./scripts/run-obs-test-pattern.sh
 ```
 
 Then open OBS and select `/dev/video20`. Use:
@@ -39,6 +39,16 @@ Then open OBS and select `/dev/video20`. Use:
 - Video format: `RGB24` if OBS offers it.
 - Resolution: `1280x720`.
 - FPS: `30`.
+
+## Show The GoPro Feed
+
+Keep this bridge running:
+
+```bash
+./scripts/run-gopro-to-v4l2.sh
+```
+
+Then select `/dev/video20` in OBS.
 
 ## OBS Setup
 
@@ -48,6 +58,7 @@ Then open OBS and select `/dev/video20`. Use:
 
 ## Remaining Live Video Work
 
-The project can now validate the GoPro UDP listener and stream a V4L2 test pattern
-into OBS. The final live-video bridge still needs FFmpeg MPEG-TS demux/decode so
-the test pattern can be replaced by decoded GoPro frames.
+The project can now validate the GoPro UDP listener, stream a V4L2 test pattern,
+and bridge GoPro UDP MPEG-TS to `/dev/video20` with FFmpeg. The next internal
+integration is replacing the external FFmpeg process with an in-process adapter so
+decoded frames can pass through `FilterPipeline`.

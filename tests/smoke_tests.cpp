@@ -1,4 +1,7 @@
+#include "lmp/ai/onnx_runtime_engine.hpp"
+#include "lmp/ai/segmentation_mask.hpp"
 #include "lmp/config/config_loader.hpp"
+#include "lmp/filters/background_blur_filter.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
 #include "lmp/filters/brightness_filter.hpp"
 #include "lmp/filters/contrast_filter.hpp"
@@ -94,9 +97,13 @@ int main() {
               "capture address") &&
        ok;
   ok = expect(config.gpu.backend == "opencl", "gpu backend") && ok;
+  ok = expect(config.ai.engine == "onnxruntime", "ai engine") && ok;
+  ok = expect(config.ai.model_path == "assets/models/person-segmentation.onnx",
+              "ai model path") &&
+       ok;
   ok = expect(config.pipeline.threads == "auto", "pipeline threads") && ok;
   ok = expect(config.pipeline.queue_size == 4U, "pipeline queue size") && ok;
-  ok = expect(config.filters.size() == 20U, "filter count") && ok;
+  ok = expect(config.filters.size() == 21U, "filter count") && ok;
   ok = expect(config.filters.front().type == "identity",
               "identity filter config") &&
        ok;
@@ -153,7 +160,10 @@ int main() {
   ok = expect(registry.contains("timestamp"), "timestamp alias registered") &&
        ok;
   ok = expect(registry.contains("histogram"), "histogram registered") && ok;
-  ok = expect(registry.size() == 24U, "default registry size") && ok;
+  ok = expect(registry.contains("background_blur"),
+              "background blur registered") &&
+       ok;
+  ok = expect(registry.size() == 25U, "default registry size") && ok;
   ok = expect(pipeline.size() == 1U, "identity pipeline size") && ok;
   ok = expect(before == after, "identity keeps frame bytes unchanged") && ok;
   ok = expect(frame.metadata().at("source") == "test", "frame metadata") && ok;
@@ -327,6 +337,32 @@ int main() {
   ok = expect(histogram.metadata().at("histogram.luma16") ==
                   "1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1",
               "histogram metadata") &&
+       ok;
+
+  const lmp::ai::SegmentationMask explicit_mask{2U, 1U, {0U, 255U}};
+  ok = expect(explicit_mask.width() == 2U, "segmentation mask width") && ok;
+  ok = expect(explicit_mask.height() == 1U, "segmentation mask height") && ok;
+  ok =
+      expect(explicit_mask.at(1U, 0U) == 255U, "segmentation mask value") && ok;
+
+  const lmp::ai::OnnxRuntimeEngine onnx{"model.onnx"};
+  auto segmentation_frame =
+      make_rgb_frame(2U, 1U, {10U, 10U, 10U, 240U, 240U, 240U});
+  const auto inferred_mask = onnx.segment_person(segmentation_frame);
+  ok = expect(onnx.name() == "onnxruntime", "onnx engine name") && ok;
+  ok = expect(onnx.available(), "onnx engine availability") && ok;
+  ok =
+      expect(inferred_mask.at(0U, 0U) == 0U && inferred_mask.at(1U, 0U) == 255U,
+             "onnx fallback segmentation") &&
+      ok;
+
+  auto background_blur =
+      make_rgb_frame(3U, 1U, {0U, 0U, 0U, 255U, 255U, 255U, 90U, 90U, 90U});
+  lmp::filters::BackgroundBlurFilter{1U, 128U}.process(background_blur);
+  ok = expect(bytes(background_blur) ==
+                  std::vector<std::uint8_t>{85U, 85U, 85U, 255U, 255U, 255U,
+                                            145U, 145U, 145U},
+              "background blur preserves foreground") &&
        ok;
 
   auto owned_buffer = lmp::gpu::GpuBuffer::allocate_host(8U);

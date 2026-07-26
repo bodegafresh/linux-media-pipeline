@@ -15,7 +15,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(LmpCompilerOptions)
 
 add_library(lmp_core
+  src/ai/onnx_runtime_engine.cpp
+  src/ai/segmentation_mask.cpp
   src/config/config_loader.cpp
+  src/filters/background_blur_filter.cpp
   src/filters/box_blur_filter.cpp
   src/filters/brightness_filter.cpp
   src/filters/contrast_filter.cpp

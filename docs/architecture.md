@@ -31,6 +31,10 @@ parts at the edge.
 - GPU: Phase 8 adds `VulkanBackend` behind the same `IGpuBackend` contract. The
   adapter is runtime-light for now and shares the buffer/import semantics used by
   OpenCL.
+- AI: Phase 9 adds `IInferenceEngine`, `OnnxRuntimeEngine`, `SegmentationMask`,
+  and `background_blur`. The current ONNX adapter is runtime-light and provides a
+  deterministic luminance-based segmentation fallback until the real ONNX Runtime
+  dependency is wired in.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.

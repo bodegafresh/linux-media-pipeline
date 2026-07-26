@@ -1,5 +1,6 @@
 #include "lmp/filters/filter_registry.hpp"
 
+#include "lmp/filters/background_blur_filter.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
 #include "lmp/filters/brightness_filter.hpp"
 #include "lmp/filters/contrast_filter.hpp"
@@ -178,6 +179,13 @@ FilterRegistry create_default_registry() {
         detail::coordinate_parameter(config, "width", 64U),
         detail::coordinate_parameter(config, "height", 32U));
   });
+  registry.register_filter(
+      "background_blur", [](const config::FilterConfig &config) {
+        return std::make_unique<BackgroundBlurFilter>(
+            detail::radius_parameter(config, 1U),
+            static_cast<std::uint8_t>(detail::integer_parameter(
+                config, "foreground_threshold", 128)));
+      });
   return registry;
 }
 

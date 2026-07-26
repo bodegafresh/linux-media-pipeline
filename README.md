@@ -32,6 +32,8 @@ Phase 1 is the current baseline:
 - GPU memory foundation: backend interface, OpenCL adapter skeleton, zero-copy host
   imports, and reusable buffer pool.
 - Vulkan backend skeleton sharing the GPU buffer and zero-copy contracts.
+- AI foundation: ONNX Runtime adapter skeleton, segmentation masks, and background
+  blur filter with deterministic fallback segmentation.
 
 ## Requirements
 

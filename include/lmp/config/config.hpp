@@ -19,6 +19,11 @@ struct GpuConfig {
   std::string backend;
 };
 
+struct AiConfig {
+  std::string engine;
+  std::string model_path;
+};
+
 struct PipelineConfig {
   std::string threads;
   std::size_t queue_size;
@@ -38,6 +43,7 @@ struct OutputConfig {
 struct AppConfig {
   CaptureConfig capture;
   GpuConfig gpu;
+  AiConfig ai;
   PipelineConfig pipeline;
   std::vector<FilterConfig> filters;
   OutputConfig output;

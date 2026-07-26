@@ -10,6 +10,10 @@ gpu:
   vulkan_enabled: false
   vulkan_zero_copy: true
 
+ai:
+  engine: onnxruntime
+  model_path: assets/models/person-segmentation.onnx
+
 pipeline:
   threads: auto
   queue_size: 4
@@ -81,6 +85,10 @@ filters:
     y: 32
     width: 64
     height: 32
+  - type: background_blur
+    enabled: false
+    radius: 1
+    foreground_threshold: 128
 
 output:
   type: v4l2

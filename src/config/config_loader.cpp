@@ -15,6 +15,7 @@ enum class Section {
   None,
   Capture,
   Gpu,
+  Ai,
   Pipeline,
   Filters,
   Output,
@@ -108,6 +109,13 @@ void apply_key_value(AppConfig &config, Section section,
       config.pipeline.queue_size = parse_size(value);
     }
     return;
+  case Section::Ai:
+    if (key == "engine") {
+      config.ai.engine = value;
+    } else if (key == "model_path") {
+      config.ai.model_path = value;
+    }
+    return;
   case Section::Output:
     if (key == "type") {
       config.output.type = value;
@@ -193,6 +201,8 @@ AppConfig ConfigLoader::load_string(std::string_view yaml) const {
         section = Section::Capture;
       } else if (section_name == "gpu") {
         section = Section::Gpu;
+      } else if (section_name == "ai") {
+        section = Section::Ai;
       } else if (section_name == "pipeline") {
         section = Section::Pipeline;
       } else if (section_name == "filters") {

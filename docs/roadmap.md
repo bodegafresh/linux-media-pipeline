@@ -98,5 +98,19 @@ implementation pass.
 Real Vulkan instance/device selection, descriptor sets, command buffers, and
 compute pipelines belong to the production Vulkan implementation pass.
 
+## Phase 9
+
+- `IInferenceEngine` interface. Done.
+- `OnnxRuntimeEngine` adapter skeleton. Done.
+- `SegmentationMask` model. Done.
+- `BackgroundBlur` filter. Done.
+- YAML configuration for ONNX model path and background blur. Done.
+- Unit coverage for mask indexing, fallback segmentation, and foreground
+  preservation. Done.
+
+This phase keeps ONNX Runtime optional so Fedora build/test/run remains stable
+without downloading model/runtime artifacts. The production pass should replace
+the fallback segmentation with real ONNX Runtime session execution.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

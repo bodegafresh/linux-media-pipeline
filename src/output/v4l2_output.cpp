@@ -30,7 +30,10 @@ void V4l2Output::open() {
   const auto fd = ::open(device_.c_str(), O_WRONLY | O_NONBLOCK);
   if (fd == invalid_fd) {
     throw std::runtime_error("cannot open V4L2 output device " + device_ +
-                             ": " + std::strerror(errno));
+                             ": " + std::strerror(errno) +
+                             ". Run ./scripts/setup-loopback.sh 20 "
+                             "linux-media-pipeline and verify v4l2-ctl "
+                             "--list-devices.");
   }
   fd_ = fd;
 }

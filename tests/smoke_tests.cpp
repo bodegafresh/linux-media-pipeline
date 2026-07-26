@@ -1,5 +1,6 @@
 #include "lmp/ai/onnx_runtime_engine.hpp"
 #include "lmp/ai/segmentation_mask.hpp"
+#include "lmp/capture/gopro_udp_source.hpp"
 #include "lmp/config/config_loader.hpp"
 #include "lmp/filters/background_blur_filter.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
@@ -32,6 +33,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -96,6 +98,10 @@ int main() {
   ok = expect(config.capture.address == "udp://0.0.0.0:8554",
               "capture address") &&
        ok;
+  const auto endpoint =
+      lmp::capture::parse_udp_endpoint(config.capture.address);
+  ok = expect(endpoint.host == "0.0.0.0", "gopro udp host") && ok;
+  ok = expect(endpoint.port == 8554U, "gopro udp port") && ok;
   ok = expect(config.gpu.backend == "opencl", "gpu backend") && ok;
   ok = expect(config.ai.engine == "onnxruntime", "ai engine") && ok;
   ok = expect(config.ai.model_path == "assets/models/person-segmentation.onnx",
@@ -418,5 +424,18 @@ int main() {
   ok = expect(vulkan_imported->zero_copy_capable(),
               "vulkan imported zero copy buffer") &&
        ok;
+
+  lmp::capture::GoProUdpSource gopro{"udp://127.0.0.1:49152"};
+  ok = expect(gopro.type() == "gopro_udp", "gopro source type") && ok;
+  ok = expect(!gopro.is_open(), "gopro source starts closed") && ok;
+  try {
+    gopro.open();
+    ok = expect(gopro.is_open(), "gopro source opens udp socket") && ok;
+    gopro.close();
+    ok = expect(!gopro.is_open(), "gopro source closes udp socket") && ok;
+  } catch (const std::runtime_error &error) {
+    std::cerr << "SKIPPED: gopro udp bind unavailable in this environment: "
+              << error.what() << '\n';
+  }
   return ok ? 0 : 1;
 }

@@ -34,6 +34,7 @@ Phase 1 is the current baseline:
 - Vulkan backend skeleton sharing the GPU buffer and zero-copy contracts.
 - AI foundation: ONNX Runtime adapter skeleton, segmentation masks, and background
   blur filter with deterministic fallback segmentation.
+- GoPro UDP capture source with Linux socket bind support.
 
 ## Requirements
 
@@ -62,6 +63,16 @@ catches up.
 ./scripts/test.sh
 ./scripts/run.sh
 ```
+
+To verify that the configured GoPro UDP listener can bind:
+
+```bash
+./build/dev/lmp --open-capture
+```
+
+The current CLI opens the UDP capture socket only when requested. MPEG-TS demuxing,
+FFmpeg decode, frame conversion, and V4L2 output are the remaining pieces before
+OBS receives live video.
 
 ## Development
 

@@ -7,7 +7,8 @@ parts at the edge.
 ## Initial Module Boundaries
 
 - Capture: media ingress such as GoPro UDP, USB camera, RTSP, files, and future NDI,
-  PipeWire, SRT, RTP, and WebRTC adapters.
+  PipeWire, SRT, RTP, and WebRTC adapters. `GoProUdpSource` parses
+  `udp://host:port` and can bind a Linux UDP socket for the configured endpoint.
 - Decoder: FFmpeg adapter with hardware acceleration extension points.
 - Frame: project-owned frame representation. FFmpeg-specific types must not leak
   outside the decoder adapter. The current `Frame` stores format, dimensions,
@@ -39,6 +40,12 @@ parts at the edge.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.
 - Metrics: Prometheus exporter for FPS, latency, processing time, queues, and memory.
+
+## Current Runtime Gap
+
+The application now instantiates the configured GoPro UDP source and can open the
+socket with `--open-capture`. The remaining live-video path is FFmpeg MPEG-TS
+demux/decode, frame conversion into `lmp::frame::Frame`, and V4L2 output.
 
 ## Filter Extension Flow
 

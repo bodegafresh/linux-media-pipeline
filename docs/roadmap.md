@@ -112,5 +112,15 @@ This phase keeps ONNX Runtime optional so Fedora build/test/run remains stable
 without downloading model/runtime artifacts. The production pass should replace
 the fallback segmentation with real ONNX Runtime session execution.
 
+## GoPro Runtime Integration
+
+- `ICaptureSource` interface. Done.
+- `GoProUdpSource` endpoint parser. Done.
+- Linux UDP socket bind/open/close lifecycle. Done.
+- CLI `--open-capture` flag for explicit capture listener validation. Done.
+- FFmpeg MPEG-TS demux/decode. Pending.
+- V4L2 virtual camera output. Pending.
+- End-to-end GoPro -> OBS streaming. Pending.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

@@ -1,2 +1,56 @@
 # linux-media-pipeline
-Proyecto open source para filtros de videos profesionales para transmitir en streaming o hacer videos tutoriales
+
+linux-media-pipeline is a Linux-first C++20 project for building very low latency
+GPU video pipelines. The first production target is:
+
+GoPro Hero11 -> UDP MPEG-TS -> FFmpeg -> GPU -> V4L2 virtual camera -> OBS Studio.
+
+The architecture is intentionally decoupled so future adapters can support USB
+cameras, RTSP, RTP, SRT, WebRTC, files, NDI, PipeWire, GStreamer, Unreal Engine,
+Galactic Explorer, and AI workloads.
+
+## Status
+
+Phase 1 is the current baseline:
+
+- Professional repository layout.
+- CMake/Ninja build.
+- Conan 2 project metadata.
+- Minimal C++20 core library and CLI.
+- CTest smoke tests.
+- Fedora-oriented operational scripts.
+- CI skeleton.
+
+## Requirements
+
+Target platform:
+
+- Fedora 44
+- GCC 16
+- CMake 4.x
+- Conan 2.x
+- Ninja
+- OpenCL 3.0
+- FFmpeg 8.x
+- OBS 31+
+- Linux kernel 6.x
+
+The Phase 1 scaffold also builds with older CMake versions that support presets
+version 6, which keeps local validation practical while the Fedora 44 toolchain
+catches up.
+
+## Quick Start
+
+```bash
+./scripts/install-fedora-deps.sh
+./scripts/build.sh
+./scripts/test.sh
+./scripts/run.sh
+```
+
+## Development
+
+The project advances in phases. Each phase must compile, pass tests, run locally,
+and update documentation before the next phase starts.
+
+See [Architecture](docs/architecture.md) and [Roadmap](docs/roadmap.md).

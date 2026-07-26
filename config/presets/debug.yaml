@@ -14,15 +14,18 @@ pipeline:
   queue_size: 4
 
 filters:
-  - type: brightness
+  - type: fps_overlay
     enabled: true
-    offset: 2
-  - type: contrast
+    fps: 30.0
+    x: 8
+    y: 8
+  - type: histogram
     enabled: true
-    factor: 1.04
-  - type: saturation
-    enabled: true
-    factor: 1.03
+    draw_overlay: false
+    x: 8
+    y: 32
+    width: 64
+    height: 32
 
 output:
   type: v4l2

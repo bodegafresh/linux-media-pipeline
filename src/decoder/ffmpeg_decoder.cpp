@@ -60,7 +60,9 @@ public:
     AVDictionary *options = nullptr;
     av_dict_set(&options, "fflags", "nobuffer", 0);
     av_dict_set(&options, "flags", "low_delay", 0);
-    av_dict_set(&options, "probesize", "32", 0);
+    av_dict_set(&options, "fifo_size", "50000000", 0);
+    av_dict_set(&options, "overrun_nonfatal", "1", 0);
+    av_dict_set(&options, "probesize", "2048", 0);
     av_dict_set(&options, "analyzeduration", "0", 0);
 
     AVFormatContext *raw_format = nullptr;
@@ -138,6 +140,9 @@ public:
             std::vector<std::size_t>{static_cast<std::size_t>(width_) * 3U},
             frame::Frame::Clock::now()};
       }
+      if (receive_result == AVERROR_INVALIDDATA) {
+        continue;
+      }
       if (receive_result != AVERROR(EAGAIN)) {
         throw std::runtime_error("cannot decode FFmpeg frame: " +
                                  ffmpeg_error(receive_result));
@@ -152,6 +157,9 @@ public:
         const auto send_result =
             avcodec_send_packet(codec_.get(), packet_.get());
         av_packet_unref(packet_.get());
+        if (send_result == AVERROR_INVALIDDATA) {
+          continue;
+        }
         if (send_result < 0) {
           throw std::runtime_error("cannot send FFmpeg packet: " +
                                    ffmpeg_error(send_result));

@@ -24,9 +24,13 @@ filters=4 filters_active=[brightness,contrast,saturation,sharpen]
 
 ## Useful Presets
 
-- `config/presets/clean.yaml`: subtle brightness, contrast, saturation, sharpen,
-  and FPS overlay.
+- `config/presets/clean.yaml`: low-latency brightness, contrast, and saturation.
 - `config/presets/background-blur.yaml`: background blur plus light contrast.
+- `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
+
+For calls, prefer `clean.yaml`. Filters such as `sharpen`, `background_blur`,
+`sobel`, `histogram` overlays, and text overlays are CPU-heavy and can add
+latency at 1280x720.
 
 ## Notes
 

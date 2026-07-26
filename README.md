@@ -57,12 +57,13 @@ Run with a filter preset:
 ```bash
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/debug.yaml
 ```
 
 The application prints active filters when streaming starts:
 
 ```text
-filters=5 filters_active=[brightness,contrast,saturation,sharpen,fps_overlay]
+filters=3 filters_active=[brightness,contrast,saturation]
 ```
 
 ## USB Camera

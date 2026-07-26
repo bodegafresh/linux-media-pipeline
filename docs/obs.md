@@ -50,6 +50,14 @@ Keep this bridge running:
 
 Then select `/dev/video20` in OBS.
 
+To verify filters visually:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
+```
+
+The terminal prints `filters_active=[...]` when filters are enabled.
+
 ## OBS Setup
 
 1. Add a Video Capture Device source.

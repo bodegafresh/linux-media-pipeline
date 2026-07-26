@@ -52,12 +52,37 @@ This reads `udp://0.0.0.0:8554` from `config/default.yaml`, decodes video with
 FFmpeg, converts frames to `lmp::Frame`, applies the configured `FilterPipeline`,
 and writes RGB frames to `/dev/video20`.
 
+Run with a filter preset:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
+```
+
+The application prints active filters when streaming starts:
+
+```text
+filters=5 filters_active=[brightness,contrast,saturation,sharpen,fps_overlay]
+```
+
 ## USB Camera
 
 USB bridging currently uses FFmpeg as an external adapter:
 
 ```bash
 ./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
+```
+
+Filters are enabled in YAML:
+
+```yaml
+filters:
+  - type: contrast
+    enabled: true
+    factor: 1.08
+  - type: sharpen
+    enabled: true
+    amount: 0.35
 ```
 
 The project architecture keeps USB capture separate from output, so this can be
@@ -101,4 +126,4 @@ The code is organized around replaceable adapters:
 - Output: V4L2 virtual camera.
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
-and [docs/obs.md](docs/obs.md).
+[docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).

@@ -4,13 +4,14 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/stream.sh test-pattern [output_device]
-  ./scripts/stream.sh gopro-udp [output_device]
+  ./scripts/stream.sh test-pattern [output_device] [config]
+  ./scripts/stream.sh gopro-udp [output_device] [config]
   ./scripts/stream.sh usb [input_device] [output_device] [width] [height] [fps]
 
 Examples:
   ./scripts/stream.sh test-pattern
   ./scripts/stream.sh gopro-udp
+  ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
   ./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
 EOF
 }
@@ -40,20 +41,22 @@ shift
 case "${mode}" in
   test-pattern)
     output_device="${1:-/dev/video20}"
+    config="${2:-config/default.yaml}"
     ensure_loopback "${output_device}"
     ./scripts/build.sh
     echo "Streaming test pattern to ${output_device}. Press Ctrl+C to stop."
-    echo "Resolution, FPS, and format come from config/default.yaml."
-    exec ./build/dev/lmp --test-pattern
+    echo "Runtime settings come from ${config}."
+    exec ./build/dev/lmp --config "${config}" --test-pattern
     ;;
 
   gopro-udp)
     output_device="${1:-/dev/video20}"
+    config="${2:-config/default.yaml}"
     ensure_loopback "${output_device}"
     ./scripts/build.sh
     echo "Streaming configured GoPro UDP capture through C++ pipeline to ${output_device}."
-    echo "Capture/output settings come from config/default.yaml."
-    exec ./build/dev/lmp --stream-live
+    echo "Runtime settings come from ${config}."
+    exec ./build/dev/lmp --config "${config}" --stream-live
     ;;
 
   usb)

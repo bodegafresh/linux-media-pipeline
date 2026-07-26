@@ -16,6 +16,14 @@ consumer.
 
 GoPro input and V4L2 output settings come from `config/default.yaml`.
 
+Use a filter preset:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
+```
+
+The terminal prints `filters_active=[...]` so you can confirm what is running.
+
 ## USB Camera To V4L2
 
 ```bash

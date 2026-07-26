@@ -1,0 +1,41 @@
+capture:
+  type: gopro_udp
+  address: udp://0.0.0.0:8554
+
+gpu:
+  backend: opencl
+
+ai:
+  engine: onnxruntime
+  model_path: assets/models/person-segmentation.onnx
+
+pipeline:
+  threads: auto
+  queue_size: 4
+
+filters:
+  - type: brightness
+    enabled: true
+    offset: 4
+  - type: contrast
+    enabled: true
+    factor: 1.08
+  - type: saturation
+    enabled: true
+    factor: 1.05
+  - type: sharpen
+    enabled: true
+    amount: 0.35
+  - type: fps_overlay
+    enabled: true
+    fps: 30.0
+    x: 8
+    y: 8
+
+output:
+  type: v4l2
+  device: /dev/video20
+  pixel_format: RGB24
+  width: 1280
+  height: 720
+  fps: 30

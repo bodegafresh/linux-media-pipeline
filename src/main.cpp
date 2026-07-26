@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -20,11 +21,30 @@ void print_help() {
   std::cout
       << "linux-media-pipeline options:\n"
       << "  --help           Show this help.\n"
+      << "  --config PATH    Load YAML config. Default: config/default.yaml.\n"
       << "  --open-capture   Bind the configured GoPro UDP listener.\n"
       << "  --check-output   Open the configured V4L2 output device.\n"
       << "  --stream-live    Decode configured capture with FFmpeg and stream "
          "to V4L2.\n"
       << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n";
+}
+
+std::string
+active_filter_list(const std::vector<lmp::config::FilterConfig> &filters) {
+  std::string result = "[";
+  auto first = true;
+  for (const auto &filter : filters) {
+    if (!filter.enabled) {
+      continue;
+    }
+    if (!first) {
+      result += ",";
+    }
+    result += filter.type;
+    first = false;
+  }
+  result += "]";
+  return result;
 }
 
 lmp::frame::Frame make_test_pattern(std::uint32_t width, std::uint32_t height,
@@ -56,12 +76,7 @@ lmp::frame::Frame make_test_pattern(std::uint32_t width, std::uint32_t height,
 
 int main(int argc, char **argv) {
   try {
-    const lmp::config::ConfigLoader loader;
-    const auto config = loader.load_file("config/default.yaml");
-    const auto registry = lmp::filters::create_default_registry();
-    const auto pipeline =
-        lmp::filters::FilterPipeline::from_config(config.filters, registry);
-
+    auto config_path = std::string{"config/default.yaml"};
     auto open_capture = false;
     auto check_output = false;
     auto stream_live = false;
@@ -72,7 +87,13 @@ int main(int argc, char **argv) {
         print_help();
         return 0;
       }
-      if (option == "--open-capture") {
+      if (option == "--config") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--config requires a path");
+        }
+        config_path = argv[index];
+      } else if (option == "--open-capture") {
         open_capture = true;
       } else if (option == "--check-output") {
         check_output = true;
@@ -84,6 +105,13 @@ int main(int argc, char **argv) {
         throw std::runtime_error("unknown option: " + std::string{option});
       }
     }
+
+    const lmp::config::ConfigLoader loader;
+    const auto config = loader.load_file(config_path);
+    const auto registry = lmp::filters::create_default_registry();
+    const auto pipeline =
+        lmp::filters::FilterPipeline::from_config(config.filters, registry);
+    const auto filters_active = active_filter_list(config.filters);
 
     lmp::capture::GoProUdpSource capture{config.capture.address};
     if (config.capture.type != capture.type()) {
@@ -118,7 +146,8 @@ int main(int argc, char **argv) {
                 << " output=" << output.type() << " device=" << output.device()
                 << " format=" << config.output.pixel_format
                 << " width=" << width << " height=" << height << " fps=" << fps
-                << " filters=" << pipeline.size() << '\n';
+                << " filters=" << pipeline.size()
+                << " filters_active=" << filters_active << '\n';
       while (true) {
         auto frame = decoder.read_frame();
         pipeline.process(frame);
@@ -139,7 +168,8 @@ int main(int argc, char **argv) {
                 << " device=" << output.device()
                 << " format=" << config.output.pixel_format
                 << " width=" << width << " height=" << height << " fps=" << fps
-                << '\n';
+                << " filters=" << pipeline.size()
+                << " filters_active=" << filters_active << '\n';
       for (std::uint32_t frame_index = 0;; ++frame_index) {
         auto frame = make_test_pattern(width, height, frame_index);
         pipeline.process(frame);
@@ -155,7 +185,8 @@ int main(int argc, char **argv) {
               << " capture_open=" << (capture.is_open() ? "true" : "false")
               << " output=" << output.type() << " device=" << output.device()
               << " output_open=" << (output.is_open() ? "true" : "false")
-              << " filters=" << pipeline.size() << '\n';
+              << " filters=" << pipeline.size()
+              << " filters_active=" << filters_active << '\n';
     return 0;
   } catch (const std::exception &error) {
     std::cerr << "linux-media-pipeline: " << error.what() << '\n';

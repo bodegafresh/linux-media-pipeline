@@ -13,5 +13,5 @@ sudo dnf install -y \
   v4l-utils \
   ffmpeg \
   ffmpeg-devel \
-  ocl-icd-devel \
+  OpenCL-ICD-Loader-devel \
   opencl-headers

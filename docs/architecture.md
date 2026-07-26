@@ -15,6 +15,8 @@ parts at the edge.
 - GPU: backend abstraction for OpenCL first, Vulkan Compute later.
 - Filters: independent video filters depending on frame and GPU interfaces.
   Filters are created by `FilterRegistry` and executed by `FilterPipeline`.
+  Phase 3 includes `identity`, `grayscale`, `negative`, and `sepia`. The visual
+  filters currently support packed 8-bit `RGBA`, `RGB`, and `BGR` frames.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.

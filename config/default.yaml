@@ -12,6 +12,12 @@ pipeline:
 filters:
   - type: identity
     enabled: true
+  - type: grayscale
+    enabled: false
+  - type: negative
+    enabled: false
+  - type: sepia
+    enabled: false
 
 output:
   type: v4l2

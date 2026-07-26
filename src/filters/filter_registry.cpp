@@ -1,6 +1,9 @@
 #include "lmp/filters/filter_registry.hpp"
 
+#include "lmp/filters/grayscale_filter.hpp"
 #include "lmp/filters/identity_filter.hpp"
+#include "lmp/filters/negative_filter.hpp"
+#include "lmp/filters/sepia_filter.hpp"
 
 #include <stdexcept>
 
@@ -40,6 +43,18 @@ FilterRegistry create_default_registry() {
   registry.register_filter("identity", [](const config::FilterConfig &config) {
     static_cast<void>(config);
     return std::make_unique<IdentityFilter>();
+  });
+  registry.register_filter("grayscale", [](const config::FilterConfig &config) {
+    static_cast<void>(config);
+    return std::make_unique<GrayscaleFilter>();
+  });
+  registry.register_filter("negative", [](const config::FilterConfig &config) {
+    static_cast<void>(config);
+    return std::make_unique<NegativeFilter>();
+  });
+  registry.register_filter("sepia", [](const config::FilterConfig &config) {
+    static_cast<void>(config);
+    return std::make_unique<SepiaFilter>();
   });
   return registry;
 }

@@ -23,6 +23,7 @@ Phase 1 is the current baseline:
 - YAML configuration loading.
 - Project-owned frame model.
 - Filter registry, factory, pipeline, and identity filter.
+- Initial visual filters: grayscale, negative, and sepia.
 
 ## Requirements
 

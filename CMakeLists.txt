@@ -22,16 +22,20 @@ add_library(lmp_core
   src/filters/exposure_filter.cpp
   src/filters/filter_pipeline.cpp
   src/filters/filter_registry.cpp
+  src/filters/fps_overlay_filter.cpp
   src/filters/gamma_filter.cpp
   src/filters/gaussian_blur_filter.cpp
   src/filters/grayscale_filter.cpp
+  src/filters/histogram_filter.cpp
   src/filters/identity_filter.cpp
   src/filters/negative_filter.cpp
   src/filters/saturation_filter.cpp
   src/filters/sharpen_filter.cpp
   src/filters/sepia_filter.cpp
   src/filters/sobel_filter.cpp
+  src/filters/text_overlay_filter.cpp
   src/filters/temperature_filter.cpp
+  src/filters/timestamp_overlay_filter.cpp
   src/filters/tint_filter.cpp
   src/filters/white_balance_filter.cpp
   src/frame/frame.cpp

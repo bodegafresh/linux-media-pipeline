@@ -4,9 +4,11 @@
 #include "lmp/filters/brightness_filter.hpp"
 #include "lmp/filters/contrast_filter.hpp"
 #include "lmp/filters/exposure_filter.hpp"
+#include "lmp/filters/fps_overlay_filter.hpp"
 #include "lmp/filters/gamma_filter.hpp"
 #include "lmp/filters/gaussian_blur_filter.hpp"
 #include "lmp/filters/grayscale_filter.hpp"
+#include "lmp/filters/histogram_filter.hpp"
 #include "lmp/filters/identity_filter.hpp"
 #include "lmp/filters/negative_filter.hpp"
 #include "lmp/filters/saturation_filter.hpp"
@@ -14,6 +16,8 @@
 #include "lmp/filters/sharpen_filter.hpp"
 #include "lmp/filters/sobel_filter.hpp"
 #include "lmp/filters/temperature_filter.hpp"
+#include "lmp/filters/text_overlay_filter.hpp"
+#include "lmp/filters/timestamp_overlay_filter.hpp"
 #include "lmp/filters/tint_filter.hpp"
 #include "lmp/filters/white_balance_filter.hpp"
 
@@ -128,6 +132,51 @@ FilterRegistry create_default_registry() {
   registry.register_filter("tint", [](const config::FilterConfig &config) {
     return std::make_unique<TintFilter>(
         detail::double_parameter(config, "amount", 0.0));
+  });
+  registry.register_filter(
+      "text_overlay", [](const config::FilterConfig &config) {
+        return std::make_unique<TextOverlayFilter>(
+            detail::string_parameter(config, "text", "LMP"),
+            detail::coordinate_parameter(config, "x", 0U),
+            detail::coordinate_parameter(config, "y", 0U));
+      });
+  registry.register_filter("text", [](const config::FilterConfig &config) {
+    return std::make_unique<TextOverlayFilter>(
+        detail::string_parameter(config, "text", "LMP"),
+        detail::coordinate_parameter(config, "x", 0U),
+        detail::coordinate_parameter(config, "y", 0U));
+  });
+  registry.register_filter("fps_overlay",
+                           [](const config::FilterConfig &config) {
+                             return std::make_unique<FpsOverlayFilter>(
+                                 detail::double_parameter(config, "fps", 0.0),
+                                 detail::coordinate_parameter(config, "x", 0U),
+                                 detail::coordinate_parameter(config, "y", 0U));
+                           });
+  registry.register_filter("fps", [](const config::FilterConfig &config) {
+    return std::make_unique<FpsOverlayFilter>(
+        detail::double_parameter(config, "fps", 0.0),
+        detail::coordinate_parameter(config, "x", 0U),
+        detail::coordinate_parameter(config, "y", 0U));
+  });
+  registry.register_filter("timestamp_overlay",
+                           [](const config::FilterConfig &config) {
+                             return std::make_unique<TimestampOverlayFilter>(
+                                 detail::coordinate_parameter(config, "x", 0U),
+                                 detail::coordinate_parameter(config, "y", 0U));
+                           });
+  registry.register_filter("timestamp", [](const config::FilterConfig &config) {
+    return std::make_unique<TimestampOverlayFilter>(
+        detail::coordinate_parameter(config, "x", 0U),
+        detail::coordinate_parameter(config, "y", 0U));
+  });
+  registry.register_filter("histogram", [](const config::FilterConfig &config) {
+    return std::make_unique<HistogramFilter>(
+        detail::bool_parameter(config, "draw_overlay", false),
+        detail::coordinate_parameter(config, "x", 0U),
+        detail::coordinate_parameter(config, "y", 0U),
+        detail::coordinate_parameter(config, "width", 64U),
+        detail::coordinate_parameter(config, "height", 32U));
   });
   return registry;
 }

@@ -27,6 +27,8 @@ Phase 1 is the current baseline:
 - Spatial filters: box blur, gaussian blur, sharpen, and sobel.
 - Color correction filters: gamma, exposure, contrast, brightness, saturation,
   white balance, temperature, and tint.
+- Overlay and analysis filters: text overlay, FPS overlay, timestamp overlay, and
+  luminance histogram.
 
 ## Requirements
 

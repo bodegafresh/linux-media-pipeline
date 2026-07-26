@@ -59,5 +59,18 @@ These filters are CPU baselines for packed 8-bit `RGB`, `BGR`, and `RGBA`
 frames. Later GPU phases can replace the implementation behind the same filter
 interfaces.
 
+## Phase 6
+
+- `TextOverlay` filter. Done.
+- `FpsOverlay` filter. Done.
+- `TimestampOverlay` filter. Done.
+- `Histogram` filter. Done.
+- YAML parameters for overlay placement and histogram rendering. Done.
+- Unit coverage for deterministic overlay pixels and histogram metadata. Done.
+
+The overlay implementation uses a small built-in bitmap font so the phase remains
+portable and dependency-light. A future renderer can replace it behind the same
+filter interfaces.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

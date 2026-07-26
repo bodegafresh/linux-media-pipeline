@@ -5,15 +5,19 @@
 #include "lmp/filters/exposure_filter.hpp"
 #include "lmp/filters/filter_pipeline.hpp"
 #include "lmp/filters/filter_registry.hpp"
+#include "lmp/filters/fps_overlay_filter.hpp"
 #include "lmp/filters/gamma_filter.hpp"
 #include "lmp/filters/gaussian_blur_filter.hpp"
 #include "lmp/filters/grayscale_filter.hpp"
+#include "lmp/filters/histogram_filter.hpp"
 #include "lmp/filters/negative_filter.hpp"
 #include "lmp/filters/saturation_filter.hpp"
 #include "lmp/filters/sepia_filter.hpp"
 #include "lmp/filters/sharpen_filter.hpp"
 #include "lmp/filters/sobel_filter.hpp"
 #include "lmp/filters/temperature_filter.hpp"
+#include "lmp/filters/text_overlay_filter.hpp"
+#include "lmp/filters/timestamp_overlay_filter.hpp"
 #include "lmp/filters/tint_filter.hpp"
 #include "lmp/filters/white_balance_filter.hpp"
 #include "lmp/frame/frame.hpp"
@@ -42,6 +46,17 @@ lmp::frame::Frame make_rgba_frame(std::vector<std::uint8_t> data) {
                            std::move(data),
                            std::vector<std::size_t>{8U},
                            lmp::frame::Frame::Clock::now()};
+}
+
+lmp::frame::Frame make_rgba_frame(std::uint32_t width, std::uint32_t height,
+                                  std::vector<std::uint8_t> data) {
+  return lmp::frame::Frame{
+      width,
+      height,
+      lmp::frame::PixelFormat::Rgba,
+      std::move(data),
+      std::vector<std::size_t>{static_cast<std::size_t>(width) * 4U},
+      lmp::frame::Frame::Clock::time_point{std::chrono::milliseconds{1234}}};
 }
 
 lmp::frame::Frame make_rgb_frame(std::uint32_t width, std::uint32_t height,
@@ -78,7 +93,7 @@ int main() {
   ok = expect(config.gpu.backend == "opencl", "gpu backend") && ok;
   ok = expect(config.pipeline.threads == "auto", "pipeline threads") && ok;
   ok = expect(config.pipeline.queue_size == 4U, "pipeline queue size") && ok;
-  ok = expect(config.filters.size() == 16U, "filter count") && ok;
+  ok = expect(config.filters.size() == 20U, "filter count") && ok;
   ok = expect(config.filters.front().type == "identity",
               "identity filter config") &&
        ok;
@@ -124,7 +139,18 @@ int main() {
        ok;
   ok = expect(registry.contains("temperature"), "temperature registered") && ok;
   ok = expect(registry.contains("tint"), "tint registered") && ok;
-  ok = expect(registry.size() == 17U, "default registry size") && ok;
+  ok = expect(registry.contains("text_overlay"), "text overlay registered") &&
+       ok;
+  ok = expect(registry.contains("text"), "text alias registered") && ok;
+  ok = expect(registry.contains("fps_overlay"), "fps overlay registered") && ok;
+  ok = expect(registry.contains("fps"), "fps alias registered") && ok;
+  ok = expect(registry.contains("timestamp_overlay"),
+              "timestamp overlay registered") &&
+       ok;
+  ok = expect(registry.contains("timestamp"), "timestamp alias registered") &&
+       ok;
+  ok = expect(registry.contains("histogram"), "histogram registered") && ok;
+  ok = expect(registry.size() == 24U, "default registry size") && ok;
   ok = expect(pipeline.size() == 1U, "identity pipeline size") && ok;
   ok = expect(before == after, "identity keeps frame bytes unchanged") && ok;
   ok = expect(frame.metadata().at("source") == "test", "frame metadata") && ok;
@@ -268,6 +294,36 @@ int main() {
   ok = expect(bytes(tint) == std::vector<std::uint8_t>{100U, 70U, 100U, 255U,
                                                        10U, 220U, 30U, 128U},
               "tint rgba") &&
+       ok;
+
+  auto text_overlay =
+      make_rgba_frame(12U, 6U, std::vector<std::uint8_t>(12U * 6U * 4U, 0U));
+  lmp::filters::TextOverlayFilter{"A", 0U, 0U}.process(text_overlay);
+  ok = expect(text_overlay.data()[4U] == 255U &&
+                  text_overlay.data()[5U] == 255U &&
+                  text_overlay.data()[6U] == 255U,
+              "text overlay draws glyph") &&
+       ok;
+
+  auto fps_overlay =
+      make_rgba_frame(24U, 6U, std::vector<std::uint8_t>(24U * 6U * 4U, 0U));
+  lmp::filters::FpsOverlayFilter{60.0, 0U, 0U}.process(fps_overlay);
+  ok = expect(fps_overlay.data()[1U] == 255U, "fps overlay draws green") && ok;
+
+  auto timestamp_overlay =
+      make_rgba_frame(24U, 6U, std::vector<std::uint8_t>(24U * 6U * 4U, 0U));
+  lmp::filters::TimestampOverlayFilter{0U, 0U}.process(timestamp_overlay);
+  ok = expect(timestamp_overlay.data()[0U] == 255U &&
+                  timestamp_overlay.data()[1U] == 255U,
+              "timestamp overlay draws yellow") &&
+       ok;
+
+  auto histogram = make_rgb_frame(
+      4U, 1U, {0U, 0U, 0U, 16U, 16U, 16U, 128U, 128U, 128U, 255U, 255U, 255U});
+  lmp::filters::HistogramFilter{false, 0U, 0U, 0U, 0U}.process(histogram);
+  ok = expect(histogram.metadata().at("histogram.luma16") ==
+                  "1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1",
+              "histogram metadata") &&
        ok;
   return ok ? 0 : 1;
 }

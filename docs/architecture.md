@@ -22,6 +22,9 @@ parts at the edge.
   Phase 5 adds CPU baseline color correction filters: `gamma`, `exposure`,
   `contrast`, `brightness`, `saturation`, `white_balance`, `temperature`, and
   `tint`.
+  Phase 6 adds bitmap text overlays (`text_overlay`, `fps_overlay`,
+  `timestamp_overlay`) and `histogram`, which stores 16-bin luminance data in
+  frame metadata and can draw a compact overlay.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.

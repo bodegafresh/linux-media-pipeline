@@ -55,6 +55,27 @@ filters:
   - type: tint
     enabled: false
     amount: 0
+  - type: text_overlay
+    enabled: false
+    text: LMP
+    x: 8
+    y: 8
+  - type: fps_overlay
+    enabled: false
+    fps: 60.0
+    x: 8
+    y: 16
+  - type: timestamp_overlay
+    enabled: false
+    x: 8
+    y: 24
+  - type: histogram
+    enabled: false
+    draw_overlay: true
+    x: 8
+    y: 32
+    width: 64
+    height: 32
 
 output:
   type: v4l2

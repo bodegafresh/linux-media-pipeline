@@ -10,10 +10,8 @@ struct Version {
   int patch;
 };
 
-[[nodiscard]] constexpr Version version() noexcept {
-  return Version{0, 1, 0};
-}
+[[nodiscard]] constexpr Version version() noexcept { return Version{0, 1, 0}; }
 
 [[nodiscard]] std::string_view version_string() noexcept;
 
-}  // namespace lmp
+} // namespace lmp

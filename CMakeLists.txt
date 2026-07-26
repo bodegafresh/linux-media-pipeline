@@ -15,6 +15,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(LmpCompilerOptions)
 
 add_library(lmp_core
+  src/config/config_loader.cpp
+  src/filters/filter_pipeline.cpp
+  src/filters/filter_registry.cpp
+  src/filters/identity_filter.cpp
+  src/frame/frame.cpp
   src/version.cpp
 )
 add_library(lmp::core ALIAS lmp_core)

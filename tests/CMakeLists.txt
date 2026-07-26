@@ -5,3 +5,7 @@ target_link_libraries(lmp_smoke_tests PRIVATE lmp::core)
 lmp_apply_compiler_options(lmp_smoke_tests)
 
 add_test(NAME lmp_smoke_tests COMMAND lmp_smoke_tests)
+set_tests_properties(lmp_smoke_tests
+  PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)

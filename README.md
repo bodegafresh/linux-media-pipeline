@@ -20,6 +20,9 @@ Phase 1 is the current baseline:
 - CTest smoke tests.
 - Fedora-oriented operational scripts.
 - CI skeleton.
+- YAML configuration loading.
+- Project-owned frame model.
+- Filter registry, factory, pipeline, and identity filter.
 
 ## Requirements
 

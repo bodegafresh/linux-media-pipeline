@@ -1,6 +1,7 @@
 #include "lmp/gpu/opencl_backend.hpp"
 
 #include <memory>
+#include <vector>
 
 #if LMP_HAS_OPENCL
 #ifndef CL_TARGET_OPENCL_VERSION
@@ -24,7 +25,20 @@ bool OpenClBackend::available() const noexcept {
       platform_count == 0U) {
     return false;
   }
-  return true;
+  std::vector<cl_platform_id> platforms(platform_count);
+  if (clGetPlatformIDs(platform_count, platforms.data(), nullptr) !=
+      CL_SUCCESS) {
+    return false;
+  }
+  for (const auto platform : platforms) {
+    cl_uint device_count = 0;
+    if (clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, nullptr,
+                       &device_count) == CL_SUCCESS &&
+        device_count > 0U) {
+      return true;
+    }
+  }
+  return false;
 #else
   return false;
 #endif

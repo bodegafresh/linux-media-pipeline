@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if LMP_HAS_OPENCL
 #ifndef CL_TARGET_OPENCL_VERSION
@@ -62,22 +63,29 @@ __kernel void color_adjust(__global uchar *data,
 class OpenClColorAdjustResources {
 public:
   OpenClColorAdjustResources() {
-    cl_platform_id platform = nullptr;
     cl_uint platform_count = 0;
-    if (clGetPlatformIDs(1, &platform, &platform_count) != CL_SUCCESS ||
+    if (clGetPlatformIDs(0, nullptr, &platform_count) != CL_SUCCESS ||
         platform_count == 0U) {
       return;
     }
 
-    cl_uint device_count = 0;
-    auto status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device_,
-                                 &device_count);
-    if (status != CL_SUCCESS || device_count == 0U) {
-      status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_DEFAULT, 1, &device_,
-                              &device_count);
-      if (status != CL_SUCCESS || device_count == 0U) {
-        return;
+    std::vector<cl_platform_id> platforms(platform_count);
+    if (clGetPlatformIDs(platform_count, platforms.data(), nullptr) !=
+        CL_SUCCESS) {
+      return;
+    }
+
+    for (const auto platform : platforms) {
+      cl_uint device_count = 0;
+      const auto status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1,
+                                         &device_, &device_count);
+      if (status == CL_SUCCESS && device_count > 0U) {
+        break;
       }
+      device_ = nullptr;
+    }
+    if (device_ == nullptr) {
+      return;
     }
 
     cl_int error = CL_SUCCESS;

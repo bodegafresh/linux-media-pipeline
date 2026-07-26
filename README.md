@@ -35,6 +35,7 @@ Phase 1 is the current baseline:
 - AI foundation: ONNX Runtime adapter skeleton, segmentation masks, and background
   blur filter with deterministic fallback segmentation.
 - GoPro UDP capture source with Linux socket bind support.
+- V4L2 output sink with explicit OBS endpoint validation.
 
 ## Requirements
 
@@ -73,6 +74,15 @@ To verify that the configured GoPro UDP listener can bind:
 The current CLI opens the UDP capture socket only when requested. MPEG-TS demuxing,
 FFmpeg decode, frame conversion, and V4L2 output are the remaining pieces before
 OBS receives live video.
+
+To verify the virtual camera endpoint for OBS:
+
+```bash
+./scripts/setup-loopback.sh 20 linux-media-pipeline
+./build/dev/lmp --check-output
+```
+
+See [OBS Validation](docs/obs.md).
 
 ## Development
 

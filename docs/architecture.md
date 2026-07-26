@@ -37,6 +37,8 @@ parts at the edge.
   deterministic luminance-based segmentation fallback until the real ONNX Runtime
   dependency is wired in.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
+  `V4l2Output` can open the configured virtual camera device and write packed
+  frame bytes.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.
 - Metrics: Prometheus exporter for FPS, latency, processing time, queues, and memory.
@@ -44,8 +46,9 @@ parts at the edge.
 ## Current Runtime Gap
 
 The application now instantiates the configured GoPro UDP source and can open the
-socket with `--open-capture`. The remaining live-video path is FFmpeg MPEG-TS
-demux/decode, frame conversion into `lmp::frame::Frame`, and V4L2 output.
+socket with `--open-capture`, and it can validate the V4L2 endpoint with
+`--check-output`. The remaining live-video path is FFmpeg MPEG-TS demux/decode,
+frame conversion into `lmp::frame::Frame`, and continuous V4L2 frame writes.
 
 ## Filter Extension Flow
 

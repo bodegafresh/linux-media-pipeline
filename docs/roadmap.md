@@ -118,9 +118,16 @@ the fallback segmentation with real ONNX Runtime session execution.
 - `GoProUdpSource` endpoint parser. Done.
 - Linux UDP socket bind/open/close lifecycle. Done.
 - CLI `--open-capture` flag for explicit capture listener validation. Done.
+- `IOutputSink` and `V4l2Output` lifecycle. Done.
+- CLI `--check-output` flag for OBS virtual camera endpoint validation. Done.
 - FFmpeg MPEG-TS demux/decode. Pending.
-- V4L2 virtual camera output. Pending.
+- Continuous V4L2 frame streaming. Pending.
 - End-to-end GoPro -> OBS streaming. Pending.
 
-Later phases add filters, GPU acceleration, virtual camera output, metrics,
-benchmarks, and release documentation.
+## Phase 10
+
+- OBS validation documentation. Done.
+- Release checklist. Done.
+- V4L2 output endpoint validation. Done.
+- Benchmark target placeholder. Done.
+- Final roadmap gap documentation. Done.

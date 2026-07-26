@@ -47,6 +47,7 @@ add_library(lmp_core
   src/gpu/gpu_buffer.cpp
   src/gpu/opencl_backend.cpp
   src/gpu/vulkan_backend.cpp
+  src/output/v4l2_output.cpp
   src/version.cpp
 )
 add_library(lmp::core ALIAS lmp_core)

@@ -28,6 +28,7 @@
 #include "lmp/gpu/buffer_pool.hpp"
 #include "lmp/gpu/opencl_backend.hpp"
 #include "lmp/gpu/vulkan_backend.hpp"
+#include "lmp/output/v4l2_output.hpp"
 #include "lmp/version.hpp"
 
 #include <chrono>
@@ -437,5 +438,16 @@ int main() {
     std::cerr << "SKIPPED: gopro udp bind unavailable in this environment: "
               << error.what() << '\n';
   }
+
+  lmp::output::V4l2Output output{"/dev/null"};
+  ok = expect(output.type() == "v4l2", "v4l2 output type") && ok;
+  ok = expect(output.device() == "/dev/null", "v4l2 output device") && ok;
+  output.open();
+  ok = expect(output.is_open(), "v4l2 output opens") && ok;
+  const auto black_frame =
+      make_rgb_frame(1U, 1U, std::vector<std::uint8_t>{0U, 0U, 0U});
+  output.write(black_frame);
+  output.close();
+  ok = expect(!output.is_open(), "v4l2 output closes") && ok;
   return ok ? 0 : 1;
 }

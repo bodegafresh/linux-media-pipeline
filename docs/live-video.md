@@ -8,7 +8,7 @@ external adapter process.
 
 ```bash
 ./scripts/setup-loopback.sh 20 linux-media-pipeline
-./scripts/run-gopro-to-v4l2.sh
+./scripts/stream.sh gopro-udp
 ```
 
 Then select `/dev/video20` in OBS, Google Meet, Zoom, Chrome, or any other V4L2
@@ -17,13 +17,19 @@ consumer.
 Custom endpoint:
 
 ```bash
-./scripts/run-gopro-to-v4l2.sh "udp://0.0.0.0:8554?fifo_size=50000000&overrun_nonfatal=1" /dev/video20 1280 720 30
+./scripts/stream.sh gopro-udp "udp://0.0.0.0:8554?fifo_size=50000000&overrun_nonfatal=1" /dev/video20 1280 720 30
 ```
 
 ## USB Camera To V4L2
 
 ```bash
-./scripts/run-usb-to-v4l2.sh /dev/video0 /dev/video20 1280 720 30
+./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
+```
+
+## Test Pattern To V4L2
+
+```bash
+./scripts/stream.sh test-pattern /dev/video20
 ```
 
 ## Application Compatibility
@@ -34,6 +40,6 @@ Google Meet in Chrome.
 
 ## Next Internal Integration
 
-The remaining engineering step is replacing the external FFmpeg process with an
-in-process FFmpeg adapter that emits `lmp::frame::Frame`, applies
+The remaining engineering step is replacing the external FFmpeg process with a
+single in-process FFmpeg adapter that emits `lmp::frame::Frame`, applies
 `FilterPipeline`, and writes through `V4l2Output`.

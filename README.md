@@ -71,9 +71,8 @@ To verify that the configured GoPro UDP listener can bind:
 ./build/dev/lmp --open-capture
 ```
 
-The current CLI opens the UDP capture socket only when requested. MPEG-TS demuxing,
-FFmpeg decode, frame conversion, and V4L2 output are the remaining pieces before
-OBS receives live video.
+The current CLI opens the UDP capture socket only when requested. Live camera
+bridges use `scripts/stream.sh` while the in-process FFmpeg adapter is completed.
 
 To verify the virtual camera endpoint for OBS:
 
@@ -85,13 +84,19 @@ To verify the virtual camera endpoint for OBS:
 To make OBS show a live validation image, keep this process running:
 
 ```bash
-./scripts/run-obs-test-pattern.sh
+./scripts/stream.sh test-pattern
 ```
 
 To stream the GoPro UDP feed into the virtual camera:
 
 ```bash
-./scripts/run-gopro-to-v4l2.sh
+./scripts/stream.sh gopro-udp
+```
+
+To stream a USB camera into the same virtual camera:
+
+```bash
+./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
 ```
 
 The same V4L2 output works in OBS, Google Meet, Zoom, Chrome, and any app that can

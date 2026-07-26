@@ -121,6 +121,8 @@ the fallback segmentation with real ONNX Runtime session execution.
 - `IOutputSink` and `V4l2Output` lifecycle. Done.
 - CLI `--check-output` flag for OBS virtual camera endpoint validation. Done.
 - CLI `--test-pattern` RGB24 writer for OBS visual validation. Done.
+- Unified `scripts/stream.sh` for test pattern, GoPro UDP, and USB camera
+  bridges. Done.
 - External FFmpeg GoPro UDP MPEG-TS to V4L2 bridge. Done.
 - External FFmpeg USB camera to V4L2 bridge. Done.
 - In-process FFmpeg MPEG-TS demux/decode. Pending.

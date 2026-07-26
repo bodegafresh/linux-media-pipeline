@@ -31,7 +31,7 @@ output=v4l2 device=/dev/video20 output_open=true
 Keep the test pattern writer running:
 
 ```bash
-./scripts/run-obs-test-pattern.sh
+./scripts/stream.sh test-pattern
 ```
 
 Then open OBS and select `/dev/video20`. Use:
@@ -45,7 +45,7 @@ Then open OBS and select `/dev/video20`. Use:
 Keep this bridge running:
 
 ```bash
-./scripts/run-gopro-to-v4l2.sh
+./scripts/stream.sh gopro-udp
 ```
 
 Then select `/dev/video20` in OBS.

@@ -9,6 +9,9 @@
 #include <utility>
 
 #if LMP_HAS_OPENCL
+#ifndef CL_TARGET_OPENCL_VERSION
+#define CL_TARGET_OPENCL_VERSION 200
+#endif
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
@@ -84,7 +87,13 @@ public:
       return;
     }
 
+#if defined(CL_VERSION_2_0)
+    const cl_queue_properties queue_properties[] = {0};
+    queue_ = clCreateCommandQueueWithProperties(context_, device_,
+                                                queue_properties, &error);
+#else
     queue_ = clCreateCommandQueue(context_, device_, 0, &error);
+#endif
     if (error != CL_SUCCESS || queue_ == nullptr) {
       reset();
       return;

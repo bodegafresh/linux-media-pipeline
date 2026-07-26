@@ -62,8 +62,9 @@ public:
     av_dict_set(&options, "flags", "low_delay", 0);
     av_dict_set(&options, "fifo_size", "50000000", 0);
     av_dict_set(&options, "overrun_nonfatal", "1", 0);
-    av_dict_set(&options, "probesize", "2048", 0);
-    av_dict_set(&options, "analyzeduration", "0", 0);
+    // MPEG-TS over UDP needs enough probing to catch PAT/PMT and codec params.
+    av_dict_set(&options, "probesize", "5000000", 0);
+    av_dict_set(&options, "analyzeduration", "2000000", 0);
 
     AVFormatContext *raw_format = nullptr;
     const auto open_result =

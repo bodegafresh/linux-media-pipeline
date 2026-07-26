@@ -72,5 +72,19 @@ The overlay implementation uses a small built-in bitmap font so the phase remain
 portable and dependency-light. A future renderer can replace it behind the same
 filter interfaces.
 
+## Phase 7
+
+- `IGpuBackend` interface. Done.
+- `OpenClBackend` adapter skeleton. Done.
+- `GpuBuffer` with owned and shared host-memory modes. Done.
+- Zero-copy host buffer import contract. Done.
+- `BufferPool` for reusable frame/GPU staging memory. Done.
+- Unit coverage for ownership, zero-copy write-through, pool reuse, and OpenCL
+  adapter behavior. Done.
+
+This phase establishes the memory and backend contracts. Real OpenCL context
+creation, command queues, kernels, and device profiling belong to the next GPU
+implementation pass.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

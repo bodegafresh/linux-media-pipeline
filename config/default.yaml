@@ -4,6 +4,9 @@ capture:
 
 gpu:
   backend: opencl
+  zero_copy: true
+  buffer_pool_enabled: true
+  buffer_pool_buffers: 4
 
 pipeline:
   threads: auto

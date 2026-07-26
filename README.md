@@ -29,6 +29,8 @@ Phase 1 is the current baseline:
   white balance, temperature, and tint.
 - Overlay and analysis filters: text overlay, FPS overlay, timestamp overlay, and
   luminance histogram.
+- GPU memory foundation: backend interface, OpenCL adapter skeleton, zero-copy host
+  imports, and reusable buffer pool.
 
 ## Requirements
 

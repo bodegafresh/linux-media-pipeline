@@ -21,6 +21,8 @@
 #include "lmp/filters/tint_filter.hpp"
 #include "lmp/filters/white_balance_filter.hpp"
 #include "lmp/frame/frame.hpp"
+#include "lmp/gpu/buffer_pool.hpp"
+#include "lmp/gpu/opencl_backend.hpp"
 #include "lmp/version.hpp"
 
 #include <chrono>
@@ -324,6 +326,48 @@ int main() {
   ok = expect(histogram.metadata().at("histogram.luma16") ==
                   "1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1",
               "histogram metadata") &&
+       ok;
+
+  auto owned_buffer = lmp::gpu::GpuBuffer::allocate_host(8U);
+  owned_buffer.host_span()[0] = 42U;
+  ok = expect(owned_buffer.size() == 8U, "owned gpu buffer size") && ok;
+  ok = expect(owned_buffer.owns_memory(), "owned gpu buffer ownership") && ok;
+  ok = expect(!owned_buffer.zero_copy_capable(),
+              "owned gpu buffer not zero copy") &&
+       ok;
+  ok =
+      expect(owned_buffer.host_span()[0] == 42U, "owned gpu buffer writable") &&
+      ok;
+
+  std::vector<std::uint8_t> external_memory{1U, 2U, 3U, 4U};
+  auto shared_buffer = lmp::gpu::GpuBuffer::wrap_host(external_memory);
+  shared_buffer.host_span()[1] = 9U;
+  ok = expect(shared_buffer.size() == 4U, "shared gpu buffer size") && ok;
+  ok =
+      expect(!shared_buffer.owns_memory(), "shared gpu buffer ownership") && ok;
+  ok = expect(shared_buffer.zero_copy_capable(),
+              "shared gpu buffer zero copy") &&
+       ok;
+  ok = expect(external_memory[1] == 9U, "shared gpu buffer writes through") &&
+       ok;
+
+  lmp::gpu::BufferPool pool{16U, 2U};
+  ok = expect(pool.available() == 2U, "buffer pool initial availability") && ok;
+  auto first = pool.acquire();
+  ok = expect(pool.available() == 1U, "buffer pool acquire") && ok;
+  pool.release(std::move(first));
+  ok = expect(pool.available() == 2U, "buffer pool release") && ok;
+
+  const lmp::gpu::OpenClBackend opencl;
+  auto opencl_buffer = opencl.create_buffer(4U);
+  auto imported = opencl.import_host_buffer(external_memory);
+  ok = expect(opencl.name() == "opencl", "opencl backend name") && ok;
+  ok = expect(opencl.supports_zero_copy_host_memory(),
+              "opencl backend zero copy capability") &&
+       ok;
+  ok = expect(opencl_buffer->owns_memory(), "opencl owned buffer") && ok;
+  ok = expect(imported->zero_copy_capable(),
+              "opencl imported zero copy buffer") &&
        ok;
   return ok ? 0 : 1;
 }

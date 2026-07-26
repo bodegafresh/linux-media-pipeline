@@ -23,6 +23,7 @@
 #include "lmp/frame/frame.hpp"
 #include "lmp/gpu/buffer_pool.hpp"
 #include "lmp/gpu/opencl_backend.hpp"
+#include "lmp/gpu/vulkan_backend.hpp"
 #include "lmp/version.hpp"
 
 #include <chrono>
@@ -368,6 +369,18 @@ int main() {
   ok = expect(opencl_buffer->owns_memory(), "opencl owned buffer") && ok;
   ok = expect(imported->zero_copy_capable(),
               "opencl imported zero copy buffer") &&
+       ok;
+
+  const lmp::gpu::VulkanBackend vulkan;
+  auto vulkan_buffer = vulkan.create_buffer(4U);
+  auto vulkan_imported = vulkan.import_host_buffer(external_memory);
+  ok = expect(vulkan.name() == "vulkan", "vulkan backend name") && ok;
+  ok = expect(vulkan.supports_zero_copy_host_memory(),
+              "vulkan backend zero copy capability") &&
+       ok;
+  ok = expect(vulkan_buffer->owns_memory(), "vulkan owned buffer") && ok;
+  ok = expect(vulkan_imported->zero_copy_capable(),
+              "vulkan imported zero copy buffer") &&
        ok;
   return ok ? 0 : 1;
 }

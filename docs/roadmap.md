@@ -86,5 +86,17 @@ This phase establishes the memory and backend contracts. Real OpenCL context
 creation, command queues, kernels, and device profiling belong to the next GPU
 implementation pass.
 
+## Phase 8
+
+- `VulkanBackend` adapter skeleton. Done.
+- Shared `IGpuBackend` contract with OpenCL. Done.
+- Zero-copy host import contract for Vulkan. Done.
+- Fedora dependency script includes Vulkan headers/loader development packages.
+  Done.
+- Unit coverage for Vulkan adapter name, ownership, and import behavior. Done.
+
+Real Vulkan instance/device selection, descriptor sets, command buffers, and
+compute pipelines belong to the production Vulkan implementation pass.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

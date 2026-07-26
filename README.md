@@ -31,6 +31,7 @@ Phase 1 is the current baseline:
   luminance histogram.
 - GPU memory foundation: backend interface, OpenCL adapter skeleton, zero-copy host
   imports, and reusable buffer pool.
+- Vulkan backend skeleton sharing the GPU buffer and zero-copy contracts.
 
 ## Requirements
 
@@ -42,6 +43,7 @@ Target platform:
 - Conan 2.x
 - Ninja
 - OpenCL 3.0
+- Vulkan 1.3+
 - FFmpeg 8.x
 - OBS 31+
 - Linux kernel 6.x

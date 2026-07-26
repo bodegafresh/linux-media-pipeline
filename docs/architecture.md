@@ -28,6 +28,9 @@ parts at the edge.
 - GPU: Phase 7 introduces `IGpuBackend`, `OpenClBackend`, `GpuBuffer`, and
   `BufferPool`. Host-memory imports are represented as shared buffers so later
   OpenCL kernels can use the same zero-copy contract.
+- GPU: Phase 8 adds `VulkanBackend` behind the same `IGpuBackend` contract. The
+  adapter is runtime-light for now and shares the buffer/import semantics used by
+  OpenCL.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.

@@ -7,6 +7,8 @@ gpu:
   zero_copy: true
   buffer_pool_enabled: true
   buffer_pool_buffers: 4
+  vulkan_enabled: false
+  vulkan_zero_copy: true
 
 pipeline:
   threads: auto

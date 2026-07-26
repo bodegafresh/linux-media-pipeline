@@ -14,4 +14,6 @@ sudo dnf install -y \
   ffmpeg \
   ffmpeg-devel \
   OpenCL-ICD-Loader-devel \
-  opencl-headers
+  opencl-headers \
+  vulkan-headers \
+  vulkan-loader-devel

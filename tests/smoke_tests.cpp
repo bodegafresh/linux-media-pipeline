@@ -1,9 +1,13 @@
 #include "lmp/config/config_loader.hpp"
+#include "lmp/filters/box_blur_filter.hpp"
 #include "lmp/filters/filter_pipeline.hpp"
 #include "lmp/filters/filter_registry.hpp"
+#include "lmp/filters/gaussian_blur_filter.hpp"
 #include "lmp/filters/grayscale_filter.hpp"
 #include "lmp/filters/negative_filter.hpp"
 #include "lmp/filters/sepia_filter.hpp"
+#include "lmp/filters/sharpen_filter.hpp"
+#include "lmp/filters/sobel_filter.hpp"
 #include "lmp/frame/frame.hpp"
 #include "lmp/version.hpp"
 
@@ -32,6 +36,17 @@ lmp::frame::Frame make_rgba_frame(std::vector<std::uint8_t> data) {
                            lmp::frame::Frame::Clock::now()};
 }
 
+lmp::frame::Frame make_rgb_frame(std::uint32_t width, std::uint32_t height,
+                                 std::vector<std::uint8_t> data) {
+  return lmp::frame::Frame{
+      width,
+      height,
+      lmp::frame::PixelFormat::Rgb,
+      std::move(data),
+      std::vector<std::size_t>{static_cast<std::size_t>(width) * 3U},
+      lmp::frame::Frame::Clock::now()};
+}
+
 std::vector<std::uint8_t> bytes(const lmp::frame::Frame &frame) {
   return {frame.data().begin(), frame.data().end()};
 }
@@ -55,7 +70,7 @@ int main() {
   ok = expect(config.gpu.backend == "opencl", "gpu backend") && ok;
   ok = expect(config.pipeline.threads == "auto", "pipeline threads") && ok;
   ok = expect(config.pipeline.queue_size == 4U, "pipeline queue size") && ok;
-  ok = expect(config.filters.size() == 4U, "filter count") && ok;
+  ok = expect(config.filters.size() == 8U, "filter count") && ok;
   ok = expect(config.filters.front().type == "identity",
               "identity filter config") &&
        ok;
@@ -86,7 +101,13 @@ int main() {
   ok = expect(registry.contains("grayscale"), "grayscale registered") && ok;
   ok = expect(registry.contains("negative"), "negative registered") && ok;
   ok = expect(registry.contains("sepia"), "sepia registered") && ok;
-  ok = expect(registry.size() == 4U, "default registry size") && ok;
+  ok = expect(registry.contains("box_blur"), "box blur registered") && ok;
+  ok = expect(registry.contains("blur"), "blur alias registered") && ok;
+  ok = expect(registry.contains("gaussian_blur"), "gaussian blur registered") &&
+       ok;
+  ok = expect(registry.contains("sharpen"), "sharpen registered") && ok;
+  ok = expect(registry.contains("sobel"), "sobel registered") && ok;
+  ok = expect(registry.size() == 9U, "default registry size") && ok;
   ok = expect(pipeline.size() == 1U, "identity pipeline size") && ok;
   ok = expect(before == after, "identity keeps frame bytes unchanged") && ok;
   ok = expect(frame.metadata().at("source") == "test", "frame metadata") && ok;
@@ -123,6 +144,46 @@ int main() {
   lmp::filters::NegativeFilter{}.process(bgr);
   ok = expect(bytes(bgr) == std::vector<std::uint8_t>{225U, 235U, 245U},
               "negative bgr channel order") &&
+       ok;
+
+  auto box_blur =
+      make_rgb_frame(3U, 1U, {0U, 0U, 0U, 90U, 90U, 90U, 180U, 180U, 180U});
+  lmp::filters::BoxBlurFilter{1U}.process(box_blur);
+  ok = expect(bytes(box_blur) == std::vector<std::uint8_t>{30U, 30U, 30U, 90U,
+                                                           90U, 90U, 150U, 150U,
+                                                           150U},
+              "box blur rgb") &&
+       ok;
+
+  auto gaussian_blur =
+      make_rgb_frame(3U, 1U, {0U, 0U, 0U, 90U, 90U, 90U, 180U, 180U, 180U});
+  lmp::filters::GaussianBlurFilter{1U}.process(gaussian_blur);
+  ok = expect(bytes(gaussian_blur) ==
+                  std::vector<std::uint8_t>{23U, 23U, 23U, 90U, 90U, 90U, 158U,
+                                            158U, 158U},
+              "gaussian blur rgb") &&
+       ok;
+
+  auto sharpen = make_rgb_frame(
+      3U, 1U, {50U, 50U, 50U, 100U, 100U, 100U, 150U, 150U, 150U});
+  lmp::filters::SharpenFilter{1.0}.process(sharpen);
+  ok = expect(bytes(sharpen) == std::vector<std::uint8_t>{0U, 0U, 0U, 100U,
+                                                          100U, 100U, 200U,
+                                                          200U, 200U},
+              "sharpen rgb") &&
+       ok;
+
+  auto sobel =
+      make_rgb_frame(3U, 3U, {0U, 0U, 0U, 0U, 0U, 0U, 255U, 255U, 255U,
+                              0U, 0U, 0U, 0U, 0U, 0U, 255U, 255U, 255U,
+                              0U, 0U, 0U, 0U, 0U, 0U, 255U, 255U, 255U});
+  lmp::filters::SobelFilter{}.process(sobel);
+  ok = expect(bytes(sobel) ==
+                  std::vector<std::uint8_t>{
+                      0U, 0U, 0U, 255U, 255U, 255U, 255U, 255U, 255U,
+                      0U, 0U, 0U, 255U, 255U, 255U, 255U, 255U, 255U,
+                      0U, 0U, 0U, 255U, 255U, 255U, 255U, 255U, 255U},
+              "sobel rgb") &&
        ok;
   return ok ? 0 : 1;
 }

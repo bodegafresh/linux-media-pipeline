@@ -16,12 +16,16 @@ include(LmpCompilerOptions)
 
 add_library(lmp_core
   src/config/config_loader.cpp
+  src/filters/box_blur_filter.cpp
   src/filters/filter_pipeline.cpp
   src/filters/filter_registry.cpp
+  src/filters/gaussian_blur_filter.cpp
   src/filters/grayscale_filter.cpp
   src/filters/identity_filter.cpp
   src/filters/negative_filter.cpp
+  src/filters/sharpen_filter.cpp
   src/filters/sepia_filter.cpp
+  src/filters/sobel_filter.cpp
   src/frame/frame.cpp
   src/version.cpp
 )

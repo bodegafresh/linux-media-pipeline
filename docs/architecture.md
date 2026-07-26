@@ -17,6 +17,8 @@ parts at the edge.
   Filters are created by `FilterRegistry` and executed by `FilterPipeline`.
   Phase 3 includes `identity`, `grayscale`, `negative`, and `sepia`. The visual
   filters currently support packed 8-bit `RGBA`, `RGB`, and `BGR` frames.
+  Phase 4 adds CPU baseline spatial filters: `box_blur`, `gaussian_blur`,
+  `sharpen`, and `sobel`. The `blur` type is an alias for `box_blur`.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.

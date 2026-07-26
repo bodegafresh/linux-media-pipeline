@@ -24,6 +24,7 @@ Phase 1 is the current baseline:
 - Project-owned frame model.
 - Filter registry, factory, pipeline, and identity filter.
 - Initial visual filters: grayscale, negative, and sepia.
+- Spatial filters: box blur, gaussian blur, sharpen, and sobel.
 
 ## Requirements
 

@@ -18,6 +18,17 @@ filters:
     enabled: false
   - type: sepia
     enabled: false
+  - type: box_blur
+    enabled: false
+    radius: 1
+  - type: gaussian_blur
+    enabled: false
+    radius: 1
+  - type: sharpen
+    enabled: false
+    amount: 1.0
+  - type: sobel
+    enabled: false
 
 output:
   type: v4l2

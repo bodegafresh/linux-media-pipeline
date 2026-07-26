@@ -29,5 +29,18 @@ and supports the project configuration shape currently used by `config/default.y
 The filters are CPU baselines for packed 8-bit frames. GPU implementations and
 YUV/NV12/P010-specific paths belong to later FFmpeg/GPU phases.
 
+## Phase 4
+
+- `BoxBlur` filter. Done.
+- `GaussianBlur` filter. Done.
+- `Sharpen` filter. Done.
+- `Sobel` filter. Done.
+- YAML parameters for `radius` and `amount`. Done.
+- Unit coverage for deterministic RGB behavior. Done.
+
+The filters remain CPU baselines and are disabled in `config/default.yaml` so the
+default executable path stays lightweight until capture/decoder/output modules are
+introduced.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

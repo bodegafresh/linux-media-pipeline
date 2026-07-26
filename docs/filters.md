@@ -19,18 +19,33 @@ Run with a preset:
 The CLI prints active filters on startup:
 
 ```text
-filters=4 filters_active=[brightness,contrast,saturation,sharpen]
+filter_backend=requested:opencl filters=1 filters_active=[color_adjust]
+filter_backend_active=opencl
 ```
 
 ## Useful Presets
 
-- `config/presets/clean.yaml`: low-latency brightness, contrast, and saturation.
+- `config/presets/realtime.yaml`: lowest-latency path with only identity.
+- `config/presets/clean.yaml`: low-latency `color_adjust`, using OpenCL when
+  the binary and system runtime support it.
 - `config/presets/background-blur.yaml`: background blur plus light contrast.
 - `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
 
-For calls, prefer `clean.yaml`. Filters such as `sharpen`, `background_blur`,
-`sobel`, `histogram` overlays, and text overlays are CPU-heavy and can add
-latency at 1280x720.
+For calls, prefer `clean.yaml` or no filters. Filters such as `sharpen`,
+`background_blur`, `sobel`, `histogram` overlays, and text overlays are CPU-heavy
+and can add latency at 1280x720.
+
+The CLI reports both the requested backend and the backend used by the first
+processed frame:
+
+```text
+filter_backend=requested:opencl filters=1 filters_active=[color_adjust]
+filter_backend_active=opencl
+```
+
+If it prints `filter_backend_active=cpu`, the filter fell back because OpenCL was
+not compiled in or no usable OpenCL device was available. `background_blur`,
+`sharpen`, overlays, and histogram still run on CPU.
 
 ## Notes
 

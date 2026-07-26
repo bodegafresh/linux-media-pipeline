@@ -146,11 +146,20 @@ int main(int argc, char **argv) {
                 << " output=" << output.type() << " device=" << output.device()
                 << " format=" << config.output.pixel_format
                 << " width=" << width << " height=" << height << " fps=" << fps
+                << " filter_backend=requested:" << config.gpu.backend
                 << " filters=" << pipeline.size()
                 << " filters_active=" << filters_active << '\n';
+      bool reported_runtime_backend = false;
       while (true) {
         auto frame = decoder.read_frame();
         pipeline.process(frame);
+        if (!reported_runtime_backend) {
+          if (const auto found = frame.metadata().find("filter_backend");
+              found != frame.metadata().end()) {
+            std::cout << "filter_backend_active=" << found->second << '\n';
+            reported_runtime_backend = true;
+          }
+        }
         output.write(frame);
       }
     }
@@ -168,11 +177,20 @@ int main(int argc, char **argv) {
                 << " device=" << output.device()
                 << " format=" << config.output.pixel_format
                 << " width=" << width << " height=" << height << " fps=" << fps
+                << " filter_backend=requested:" << config.gpu.backend
                 << " filters=" << pipeline.size()
                 << " filters_active=" << filters_active << '\n';
+      bool reported_runtime_backend = false;
       for (std::uint32_t frame_index = 0;; ++frame_index) {
         auto frame = make_test_pattern(width, height, frame_index);
         pipeline.process(frame);
+        if (!reported_runtime_backend) {
+          if (const auto found = frame.metadata().find("filter_backend");
+              found != frame.metadata().end()) {
+            std::cout << "filter_backend_active=" << found->second << '\n';
+            reported_runtime_backend = true;
+          }
+        }
         output.write(frame);
         std::this_thread::sleep_for(std::chrono::milliseconds{1000 / fps});
       }
@@ -185,6 +203,7 @@ int main(int argc, char **argv) {
               << " capture_open=" << (capture.is_open() ? "true" : "false")
               << " output=" << output.type() << " device=" << output.device()
               << " output_open=" << (output.is_open() ? "true" : "false")
+              << " filter_backend=requested:" << config.gpu.backend
               << " filters=" << pipeline.size()
               << " filters_active=" << filters_active << '\n';
     return 0;

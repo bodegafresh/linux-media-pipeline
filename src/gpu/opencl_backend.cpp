@@ -2,11 +2,30 @@
 
 #include <memory>
 
+#if LMP_HAS_OPENCL
+#ifdef __APPLE__
+#include <OpenCL/opencl.h>
+#else
+#include <CL/cl.h>
+#endif
+#endif
+
 namespace lmp::gpu {
 
 std::string_view OpenClBackend::name() const noexcept { return "opencl"; }
 
-bool OpenClBackend::available() const noexcept { return false; }
+bool OpenClBackend::available() const noexcept {
+#if LMP_HAS_OPENCL
+  cl_uint platform_count = 0;
+  if (clGetPlatformIDs(0, nullptr, &platform_count) != CL_SUCCESS ||
+      platform_count == 0U) {
+    return false;
+  }
+  return true;
+#else
+  return false;
+#endif
+}
 
 bool OpenClBackend::supports_zero_copy_host_memory() const noexcept {
   return true;

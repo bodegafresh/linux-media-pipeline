@@ -3,6 +3,7 @@
 #include "lmp/filters/background_blur_filter.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
 #include "lmp/filters/brightness_filter.hpp"
+#include "lmp/filters/color_adjust_filter.hpp"
 #include "lmp/filters/contrast_filter.hpp"
 #include "lmp/filters/exposure_filter.hpp"
 #include "lmp/filters/fps_overlay_filter.hpp"
@@ -117,6 +118,14 @@ FilterRegistry create_default_registry() {
       "saturation", [](const config::FilterConfig &config) {
         return std::make_unique<SaturationFilter>(
             detail::double_parameter(config, "factor", 1.0));
+      });
+  registry.register_filter(
+      "color_adjust", [](const config::FilterConfig &config) {
+        return std::make_unique<ColorAdjustFilter>(
+            detail::double_parameter(config, "brightness", 0.0),
+            detail::double_parameter(config, "contrast", 1.0),
+            detail::double_parameter(config, "saturation", 1.0),
+            detail::string_parameter(config, "backend", "cpu"));
       });
   registry.register_filter(
       "white_balance", [](const config::FilterConfig &config) {

@@ -5,6 +5,7 @@
 #include "lmp/filters/background_blur_filter.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
 #include "lmp/filters/brightness_filter.hpp"
+#include "lmp/filters/color_adjust_filter.hpp"
 #include "lmp/filters/contrast_filter.hpp"
 #include "lmp/filters/exposure_filter.hpp"
 #include "lmp/filters/filter_pipeline.hpp"
@@ -175,7 +176,9 @@ int main() {
   ok = expect(registry.contains("background_blur"),
               "background blur registered") &&
        ok;
-  ok = expect(registry.size() == 25U, "default registry size") && ok;
+  ok = expect(registry.contains("color_adjust"), "color adjust registered") &&
+       ok;
+  ok = expect(registry.size() == 26U, "default registry size") && ok;
   ok = expect(pipeline.size() == 1U, "identity pipeline size") && ok;
   ok = expect(before == after, "identity keeps frame bytes unchanged") && ok;
   ok = expect(frame.metadata().at("source") == "test", "frame metadata") && ok;
@@ -319,6 +322,15 @@ int main() {
   ok = expect(bytes(tint) == std::vector<std::uint8_t>{100U, 70U, 100U, 255U,
                                                        10U, 220U, 30U, 128U},
               "tint rgba") &&
+       ok;
+
+  auto color_adjust =
+      make_rgba_frame({100U, 150U, 200U, 255U, 10U, 20U, 30U, 128U});
+  lmp::filters::ColorAdjustFilter{2.0, 1.04, 1.03}.process(color_adjust);
+  ok = expect(bytes(color_adjust) == std::vector<std::uint8_t>{100U, 153U, 207U,
+                                                               255U, 7U, 18U,
+                                                               28U, 128U},
+              "color adjust rgba") &&
        ok;
 
   auto text_overlay =

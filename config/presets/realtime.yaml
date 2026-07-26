@@ -14,12 +14,8 @@ pipeline:
   queue_size: 4
 
 filters:
-  - type: color_adjust
+  - type: identity
     enabled: true
-    backend: opencl
-    brightness: 2
-    contrast: 1.04
-    saturation: 1.03
 
 output:
   type: v4l2

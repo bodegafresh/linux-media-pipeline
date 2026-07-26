@@ -20,6 +20,7 @@ Meet, Zoom, Chrome, or any other app that can read `/dev/video*`.
 - Conan 2.x
 - Ninja
 - FFmpeg 8.x and development headers
+- OpenCL loader, headers, and a working GPU ICD/runtime
 - v4l2loopback
 - OBS 31+ or another V4L2 consumer
 
@@ -63,8 +64,12 @@ Run with a filter preset:
 The application prints active filters when streaming starts:
 
 ```text
-filters=3 filters_active=[brightness,contrast,saturation]
+filter_backend=requested:opencl filters=1 filters_active=[color_adjust]
+filter_backend_active=opencl
 ```
+
+If OpenCL is not available at runtime, `color_adjust` falls back to CPU and the
+active backend line will say `filter_backend_active=cpu`.
 
 ## USB Camera
 
@@ -78,12 +83,12 @@ Filters are enabled in YAML:
 
 ```yaml
 filters:
-  - type: contrast
+  - type: color_adjust
     enabled: true
-    factor: 1.08
-  - type: sharpen
-    enabled: true
-    amount: 0.35
+    backend: opencl
+    brightness: 2
+    contrast: 1.04
+    saturation: 1.03
 ```
 
 The project architecture keeps USB capture separate from output, so this can be

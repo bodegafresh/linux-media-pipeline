@@ -1,13 +1,21 @@
 #include "lmp/config/config_loader.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
+#include "lmp/filters/brightness_filter.hpp"
+#include "lmp/filters/contrast_filter.hpp"
+#include "lmp/filters/exposure_filter.hpp"
 #include "lmp/filters/filter_pipeline.hpp"
 #include "lmp/filters/filter_registry.hpp"
+#include "lmp/filters/gamma_filter.hpp"
 #include "lmp/filters/gaussian_blur_filter.hpp"
 #include "lmp/filters/grayscale_filter.hpp"
 #include "lmp/filters/negative_filter.hpp"
+#include "lmp/filters/saturation_filter.hpp"
 #include "lmp/filters/sepia_filter.hpp"
 #include "lmp/filters/sharpen_filter.hpp"
 #include "lmp/filters/sobel_filter.hpp"
+#include "lmp/filters/temperature_filter.hpp"
+#include "lmp/filters/tint_filter.hpp"
+#include "lmp/filters/white_balance_filter.hpp"
 #include "lmp/frame/frame.hpp"
 #include "lmp/version.hpp"
 
@@ -70,7 +78,7 @@ int main() {
   ok = expect(config.gpu.backend == "opencl", "gpu backend") && ok;
   ok = expect(config.pipeline.threads == "auto", "pipeline threads") && ok;
   ok = expect(config.pipeline.queue_size == 4U, "pipeline queue size") && ok;
-  ok = expect(config.filters.size() == 8U, "filter count") && ok;
+  ok = expect(config.filters.size() == 16U, "filter count") && ok;
   ok = expect(config.filters.front().type == "identity",
               "identity filter config") &&
        ok;
@@ -107,7 +115,16 @@ int main() {
        ok;
   ok = expect(registry.contains("sharpen"), "sharpen registered") && ok;
   ok = expect(registry.contains("sobel"), "sobel registered") && ok;
-  ok = expect(registry.size() == 9U, "default registry size") && ok;
+  ok = expect(registry.contains("gamma"), "gamma registered") && ok;
+  ok = expect(registry.contains("exposure"), "exposure registered") && ok;
+  ok = expect(registry.contains("contrast"), "contrast registered") && ok;
+  ok = expect(registry.contains("brightness"), "brightness registered") && ok;
+  ok = expect(registry.contains("saturation"), "saturation registered") && ok;
+  ok = expect(registry.contains("white_balance"), "white balance registered") &&
+       ok;
+  ok = expect(registry.contains("temperature"), "temperature registered") && ok;
+  ok = expect(registry.contains("tint"), "tint registered") && ok;
+  ok = expect(registry.size() == 17U, "default registry size") && ok;
   ok = expect(pipeline.size() == 1U, "identity pipeline size") && ok;
   ok = expect(before == after, "identity keeps frame bytes unchanged") && ok;
   ok = expect(frame.metadata().at("source") == "test", "frame metadata") && ok;
@@ -184,6 +201,73 @@ int main() {
                       0U, 0U, 0U, 255U, 255U, 255U, 255U, 255U, 255U,
                       0U, 0U, 0U, 255U, 255U, 255U, 255U, 255U, 255U},
               "sobel rgb") &&
+       ok;
+
+  auto brightness =
+      make_rgba_frame({10U, 100U, 240U, 255U, 0U, 20U, 40U, 128U});
+  lmp::filters::BrightnessFilter{20.0}.process(brightness);
+  ok = expect(bytes(brightness) == std::vector<std::uint8_t>{30U, 120U, 255U,
+                                                             255U, 20U, 40U,
+                                                             60U, 128U},
+              "brightness rgba") &&
+       ok;
+
+  auto contrast =
+      make_rgba_frame({100U, 128U, 160U, 255U, 50U, 200U, 250U, 128U});
+  lmp::filters::ContrastFilter{2.0}.process(contrast);
+  ok =
+      expect(bytes(contrast) == std::vector<std::uint8_t>{72U, 128U, 192U, 255U,
+                                                          0U, 255U, 255U, 128U},
+             "contrast rgba") &&
+      ok;
+
+  auto exposure = make_rgba_frame({10U, 100U, 200U, 255U, 20U, 40U, 80U, 128U});
+  lmp::filters::ExposureFilter{1.0}.process(exposure);
+  ok =
+      expect(bytes(exposure) == std::vector<std::uint8_t>{20U, 200U, 255U, 255U,
+                                                          40U, 80U, 160U, 128U},
+             "exposure rgba") &&
+      ok;
+
+  auto gamma = make_rgba_frame({64U, 128U, 255U, 255U, 16U, 81U, 144U, 128U});
+  lmp::filters::GammaFilter{2.0}.process(gamma);
+  ok = expect(bytes(gamma) == std::vector<std::uint8_t>{128U, 181U, 255U, 255U,
+                                                        64U, 144U, 192U, 128U},
+              "gamma rgba") &&
+       ok;
+
+  auto saturation =
+      make_rgba_frame({100U, 150U, 200U, 255U, 10U, 20U, 30U, 128U});
+  lmp::filters::SaturationFilter{0.0}.process(saturation);
+  ok = expect(bytes(saturation) == std::vector<std::uint8_t>{141U, 141U, 141U,
+                                                             255U, 18U, 18U,
+                                                             18U, 128U},
+              "saturation rgba") &&
+       ok;
+
+  auto white_balance =
+      make_rgba_frame({100U, 100U, 100U, 255U, 200U, 50U, 25U, 128U});
+  lmp::filters::WhiteBalanceFilter{1.2, 1.0, 0.5}.process(white_balance);
+  ok = expect(bytes(white_balance) == std::vector<std::uint8_t>{120U, 100U, 50U,
+                                                                255U, 240U, 50U,
+                                                                13U, 128U},
+              "white balance rgba") &&
+       ok;
+
+  auto temperature =
+      make_rgba_frame({100U, 100U, 100U, 255U, 250U, 20U, 5U, 128U});
+  lmp::filters::TemperatureFilter{20.0}.process(temperature);
+  ok = expect(bytes(temperature) == std::vector<std::uint8_t>{120U, 100U, 80U,
+                                                              255U, 255U, 20U,
+                                                              0U, 128U},
+              "temperature rgba") &&
+       ok;
+
+  auto tint = make_rgba_frame({100U, 100U, 100U, 255U, 10U, 250U, 30U, 128U});
+  lmp::filters::TintFilter{-30.0}.process(tint);
+  ok = expect(bytes(tint) == std::vector<std::uint8_t>{100U, 70U, 100U, 255U,
+                                                       10U, 220U, 30U, 128U},
+              "tint rgba") &&
        ok;
   return ok ? 0 : 1;
 }

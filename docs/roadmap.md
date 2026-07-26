@@ -42,5 +42,22 @@ The filters remain CPU baselines and are disabled in `config/default.yaml` so th
 default executable path stays lightweight until capture/decoder/output modules are
 introduced.
 
+## Phase 5
+
+- `Gamma` filter. Done.
+- `Exposure` filter. Done.
+- `Contrast` filter. Done.
+- `Brightness` filter. Done.
+- `Saturation` filter. Done.
+- `WhiteBalance` filter. Done.
+- `Temperature` filter. Done.
+- `Tint` filter. Done.
+- YAML parameters for color correction. Done.
+- Unit coverage for deterministic RGBA behavior. Done.
+
+These filters are CPU baselines for packed 8-bit `RGB`, `BGR`, and `RGBA`
+frames. Later GPU phases can replace the implementation behind the same filter
+interfaces.
+
 Later phases add filters, GPU acceleration, virtual camera output, metrics,
 benchmarks, and release documentation.

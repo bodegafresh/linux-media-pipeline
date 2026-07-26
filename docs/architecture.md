@@ -19,6 +19,9 @@ parts at the edge.
   filters currently support packed 8-bit `RGBA`, `RGB`, and `BGR` frames.
   Phase 4 adds CPU baseline spatial filters: `box_blur`, `gaussian_blur`,
   `sharpen`, and `sobel`. The `blur` type is an alias for `box_blur`.
+  Phase 5 adds CPU baseline color correction filters: `gamma`, `exposure`,
+  `contrast`, `brightness`, `saturation`, `white_balance`, `temperature`, and
+  `tint`.
 - Output: V4L2 virtual camera first, OBS SDK, PipeWire, files, and RTMP later.
 - Config: YAML-backed runtime configuration. Phase 2 supports the project config
   shape in `config/default.yaml`; hot reload arrives in a later phase.

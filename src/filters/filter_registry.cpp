@@ -1,13 +1,21 @@
 #include "lmp/filters/filter_registry.hpp"
 
 #include "lmp/filters/box_blur_filter.hpp"
+#include "lmp/filters/brightness_filter.hpp"
+#include "lmp/filters/contrast_filter.hpp"
+#include "lmp/filters/exposure_filter.hpp"
+#include "lmp/filters/gamma_filter.hpp"
 #include "lmp/filters/gaussian_blur_filter.hpp"
 #include "lmp/filters/grayscale_filter.hpp"
 #include "lmp/filters/identity_filter.hpp"
 #include "lmp/filters/negative_filter.hpp"
+#include "lmp/filters/saturation_filter.hpp"
 #include "lmp/filters/sepia_filter.hpp"
 #include "lmp/filters/sharpen_filter.hpp"
 #include "lmp/filters/sobel_filter.hpp"
+#include "lmp/filters/temperature_filter.hpp"
+#include "lmp/filters/tint_filter.hpp"
+#include "lmp/filters/white_balance_filter.hpp"
 
 #include "filter_config_params.hpp"
 
@@ -82,6 +90,44 @@ FilterRegistry create_default_registry() {
   registry.register_filter("sobel", [](const config::FilterConfig &config) {
     static_cast<void>(config);
     return std::make_unique<SobelFilter>();
+  });
+  registry.register_filter("gamma", [](const config::FilterConfig &config) {
+    return std::make_unique<GammaFilter>(
+        detail::double_parameter(config, "gamma", 1.0));
+  });
+  registry.register_filter("exposure", [](const config::FilterConfig &config) {
+    return std::make_unique<ExposureFilter>(
+        detail::double_parameter(config, "stops", 0.0));
+  });
+  registry.register_filter("contrast", [](const config::FilterConfig &config) {
+    return std::make_unique<ContrastFilter>(
+        detail::double_parameter(config, "factor", 1.0));
+  });
+  registry.register_filter(
+      "brightness", [](const config::FilterConfig &config) {
+        return std::make_unique<BrightnessFilter>(
+            detail::double_parameter(config, "offset", 0.0));
+      });
+  registry.register_filter(
+      "saturation", [](const config::FilterConfig &config) {
+        return std::make_unique<SaturationFilter>(
+            detail::double_parameter(config, "factor", 1.0));
+      });
+  registry.register_filter(
+      "white_balance", [](const config::FilterConfig &config) {
+        return std::make_unique<WhiteBalanceFilter>(
+            detail::double_parameter(config, "red_gain", 1.0),
+            detail::double_parameter(config, "green_gain", 1.0),
+            detail::double_parameter(config, "blue_gain", 1.0));
+      });
+  registry.register_filter(
+      "temperature", [](const config::FilterConfig &config) {
+        return std::make_unique<TemperatureFilter>(
+            detail::double_parameter(config, "amount", 0.0));
+      });
+  registry.register_filter("tint", [](const config::FilterConfig &config) {
+    return std::make_unique<TintFilter>(
+        detail::double_parameter(config, "amount", 0.0));
   });
   return registry;
 }

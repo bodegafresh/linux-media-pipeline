@@ -29,6 +29,32 @@ filters:
     amount: 1.0
   - type: sobel
     enabled: false
+  - type: gamma
+    enabled: false
+    gamma: 1.0
+  - type: exposure
+    enabled: false
+    stops: 0.0
+  - type: contrast
+    enabled: false
+    factor: 1.0
+  - type: brightness
+    enabled: false
+    offset: 0
+  - type: saturation
+    enabled: false
+    factor: 1.0
+  - type: white_balance
+    enabled: false
+    red_gain: 1.0
+    green_gain: 1.0
+    blue_gain: 1.0
+  - type: temperature
+    enabled: false
+    amount: 0
+  - type: tint
+    enabled: false
+    amount: 0
 
 output:
   type: v4l2

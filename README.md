@@ -25,6 +25,8 @@ Phase 1 is the current baseline:
 - Filter registry, factory, pipeline, and identity filter.
 - Initial visual filters: grayscale, negative, and sepia.
 - Spatial filters: box blur, gaussian blur, sharpen, and sobel.
+- Color correction filters: gamma, exposure, contrast, brightness, saturation,
+  white balance, temperature, and tint.
 
 ## Requirements
 

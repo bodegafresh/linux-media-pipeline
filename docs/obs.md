@@ -58,7 +58,5 @@ Then select `/dev/video20` in OBS.
 
 ## Remaining Live Video Work
 
-The project can now validate the GoPro UDP listener, stream a V4L2 test pattern,
-and bridge GoPro UDP MPEG-TS to `/dev/video20` with FFmpeg. The next internal
-integration is replacing the external FFmpeg process with an in-process adapter so
-decoded frames can pass through `FilterPipeline`.
+The project can validate the GoPro UDP listener, stream a V4L2 test pattern, and
+stream decoded GoPro frames through `FilterPipeline` into `/dev/video20`.

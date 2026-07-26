@@ -10,15 +10,33 @@ project(
 option(LMP_BUILD_TESTS "Build tests" ON)
 option(LMP_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(LMP_ENABLE_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
+option(LMP_ENABLE_FFMPEG "Enable in-process FFmpeg decoder when available" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(LmpCompilerOptions)
+
+set(LMP_HAS_FFMPEG OFF)
+if(LMP_ENABLE_FFMPEG)
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(FFMPEG QUIET IMPORTED_TARGET
+      libavformat
+      libavcodec
+      libavutil
+      libswscale
+    )
+    if(FFMPEG_FOUND)
+      set(LMP_HAS_FFMPEG ON)
+    endif()
+  endif()
+endif()
 
 add_library(lmp_core
   src/ai/onnx_runtime_engine.cpp
   src/ai/segmentation_mask.cpp
   src/capture/gopro_udp_source.cpp
   src/config/config_loader.cpp
+  src/decoder/ffmpeg_decoder.cpp
   src/filters/background_blur_filter.cpp
   src/filters/box_blur_filter.cpp
   src/filters/brightness_filter.cpp
@@ -58,6 +76,12 @@ target_include_directories(lmp_core
     $<INSTALL_INTERFACE:include>
 )
 target_compile_features(lmp_core PUBLIC cxx_std_20)
+target_compile_definitions(lmp_core PUBLIC
+  LMP_HAS_FFMPEG=$<BOOL:${LMP_HAS_FFMPEG}>
+)
+if(LMP_HAS_FFMPEG)
+  target_link_libraries(lmp_core PUBLIC PkgConfig::FFMPEG)
+endif()
 lmp_apply_compiler_options(lmp_core)
 
 add_executable(lmp

@@ -1,60 +1,27 @@
 # linux-media-pipeline
 
-linux-media-pipeline is a Linux-first C++20 project for building very low latency
-GPU video pipelines. The first production target is:
+linux-media-pipeline is a Linux-first C++20 media pipeline for low-latency camera
+ingest, frame processing, and virtual-camera output.
 
-GoPro Hero11 -> UDP MPEG-TS -> FFmpeg -> GPU -> V4L2 virtual camera -> OBS Studio.
+The primary path is:
 
-The architecture is intentionally decoupled so future adapters can support USB
-cameras, RTSP, RTP, SRT, WebRTC, files, NDI, PipeWire, GStreamer, Unreal Engine,
-Galactic Explorer, and AI workloads.
+```text
+GoPro Hero11 UDP MPEG-TS -> FFmpeg decode -> lmp::Frame -> FilterPipeline -> V4L2
+```
 
-## Status
-
-Phase 1 is the current baseline:
-
-- Professional repository layout.
-- CMake/Ninja build.
-- Conan 2 project metadata.
-- Minimal C++20 core library and CLI.
-- CTest smoke tests.
-- Fedora-oriented operational scripts.
-- CI skeleton.
-- YAML configuration loading.
-- Project-owned frame model.
-- Filter registry, factory, pipeline, and identity filter.
-- Initial visual filters: grayscale, negative, and sepia.
-- Spatial filters: box blur, gaussian blur, sharpen, and sobel.
-- Color correction filters: gamma, exposure, contrast, brightness, saturation,
-  white balance, temperature, and tint.
-- Overlay and analysis filters: text overlay, FPS overlay, timestamp overlay, and
-  luminance histogram.
-- GPU memory foundation: backend interface, OpenCL adapter skeleton, zero-copy host
-  imports, and reusable buffer pool.
-- Vulkan backend skeleton sharing the GPU buffer and zero-copy contracts.
-- AI foundation: ONNX Runtime adapter skeleton, segmentation masks, and background
-  blur filter with deterministic fallback segmentation.
-- GoPro UDP capture source with Linux socket bind support.
-- V4L2 output sink with explicit OBS endpoint validation.
+The V4L2 output is a normal Linux camera device, so it can be used by OBS, Google
+Meet, Zoom, Chrome, or any other app that can read `/dev/video*`.
 
 ## Requirements
-
-Target platform:
 
 - Fedora 44
 - GCC 16
 - CMake 4.x
 - Conan 2.x
 - Ninja
-- OpenCL 3.0
-- Vulkan 1.3+
-- FFmpeg 8.x
-- OBS 31+
-- Linux kernel 6.x
-
-The Phase 1 scaffold also builds with older CMake versions that support presets
-version 6, which keeps local validation practical while the Fedora 44 toolchain
-catches up.
+- FFmpeg 8.x and development headers
+- v4l2loopback
+- OBS 31+ or another V4L2 consumer
 
 ## Quick Start
 
@@ -62,52 +29,76 @@ catches up.
 ./scripts/install-fedora-deps.sh
 ./scripts/build.sh
 ./scripts/test.sh
-./scripts/run.sh
-```
-
-To verify that the configured GoPro UDP listener can bind:
-
-```bash
-./build/dev/lmp --open-capture
-```
-
-The current CLI opens the UDP capture socket only when requested. Live camera
-bridges use `scripts/stream.sh` while the in-process FFmpeg adapter is completed.
-
-To verify the virtual camera endpoint for OBS:
-
-```bash
 ./scripts/setup-loopback.sh 20 linux-media-pipeline
-./build/dev/lmp --check-output
 ```
 
-To make OBS show a live validation image, keep this process running:
+Validate the virtual camera with a generated pattern:
 
 ```bash
 ./scripts/stream.sh test-pattern
 ```
 
-To stream the GoPro UDP feed into the virtual camera:
+Select `/dev/video20` in OBS, Google Meet, Zoom, or Chrome.
+
+## GoPro Hero11
+
+Start the in-process FFmpeg pipeline:
 
 ```bash
 ./scripts/stream.sh gopro-udp
 ```
 
-To stream a USB camera into the same virtual camera:
+This reads `udp://0.0.0.0:8554` from `config/default.yaml`, decodes video with
+FFmpeg, converts frames to `lmp::Frame`, applies the configured `FilterPipeline`,
+and writes RGB frames to `/dev/video20`.
+
+## USB Camera
+
+USB bridging currently uses FFmpeg as an external adapter:
 
 ```bash
 ./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
 ```
 
-The same V4L2 output works in OBS, Google Meet, Zoom, Chrome, and any app that can
-consume a Linux camera device. OBS is only the validation target.
+The project architecture keeps USB capture separate from output, so this can be
+replaced by an in-process `UsbCameraSource` without changing the V4L2 consumer.
 
-See [OBS Validation](docs/obs.md).
-See [Live Video Bridges](docs/live-video.md).
+## Useful Commands
 
-## Development
+```bash
+./build/dev/lmp --help
+./build/dev/lmp --open-capture
+./build/dev/lmp --check-output
+./build/dev/lmp --stream-live
+./build/dev/lmp --test-pattern
+```
 
-The project advances in phases. Each phase must compile, pass tests, run locally,
-and update documentation before the next phase starts.
+## Configuration
 
-See [Architecture](docs/architecture.md) and [Roadmap](docs/roadmap.md).
+Default runtime configuration lives in [config/default.yaml](config/default.yaml).
+The important output settings are:
+
+```yaml
+output:
+  type: v4l2
+  device: /dev/video20
+  pixel_format: RGB24
+  width: 1280
+  height: 720
+  fps: 30
+```
+
+## Architecture
+
+The code is organized around replaceable adapters:
+
+- Capture: GoPro UDP now, USB/RTSP/SRT/WebRTC later.
+- Decoder: FFmpeg in-process for the GoPro path.
+- Frame: project-owned `lmp::frame::Frame`.
+- Filters: independent `IVideoFilter` implementations loaded from YAML.
+- GPU: OpenCL and Vulkan backend contracts.
+- AI: ONNX Runtime adapter contract and segmentation mask model.
+- Output: V4L2 virtual camera.
+
+See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
+and [docs/obs.md](docs/obs.md).

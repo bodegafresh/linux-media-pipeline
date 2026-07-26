@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/stream.sh test-pattern [output_device]
-  ./scripts/stream.sh gopro-udp [input_url] [output_device] [width] [height] [fps]
+  ./scripts/stream.sh gopro-udp [output_device]
   ./scripts/stream.sh usb [input_device] [output_device] [width] [height] [fps]
 
 Examples:
@@ -48,29 +48,12 @@ case "${mode}" in
     ;;
 
   gopro-udp)
-    input_url="${1:-udp://0.0.0.0:8554?fifo_size=50000000&overrun_nonfatal=1}"
-    output_device="${2:-/dev/video20}"
-    width="${3:-1280}"
-    height="${4:-720}"
-    fps="${5:-30}"
+    output_device="${1:-/dev/video20}"
     ensure_loopback "${output_device}"
-    echo "Streaming GoPro UDP MPEG-TS to ${output_device}"
-    echo "Input: ${input_url}"
-    echo "Output: ${width}x${height}@${fps} RGB24"
-    exec ffmpeg \
-      -hide_banner \
-      -loglevel info \
-      -fflags nobuffer \
-      -flags low_delay \
-      -strict experimental \
-      -probesize 32 \
-      -analyzeduration 0 \
-      -i "${input_url}" \
-      -an \
-      -vf "fps=${fps},scale=${width}:${height}:flags=fast_bilinear,format=rgb24" \
-      -pix_fmt rgb24 \
-      -f v4l2 \
-      "${output_device}"
+    ./scripts/build.sh
+    echo "Streaming configured GoPro UDP capture through C++ pipeline to ${output_device}."
+    echo "Capture/output settings come from config/default.yaml."
+    exec ./build/dev/lmp --stream-live
     ;;
 
   usb)

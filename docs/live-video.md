@@ -1,8 +1,8 @@
 # Live Video Bridges
 
-The core library exposes capture, filter, GPU, AI, and output contracts. Until the
-in-process FFmpeg adapter is completed, production validation uses FFmpeg as an
-external adapter process.
+The core library exposes capture, decode, filter, GPU, AI, and output contracts.
+The GoPro path uses an in-process FFmpeg decoder. USB bridging currently uses
+FFmpeg as an external adapter until `UsbCameraSource` is implemented.
 
 ## GoPro Hero11 To V4L2
 
@@ -14,11 +14,7 @@ external adapter process.
 Then select `/dev/video20` in OBS, Google Meet, Zoom, Chrome, or any other V4L2
 consumer.
 
-Custom endpoint:
-
-```bash
-./scripts/stream.sh gopro-udp "udp://0.0.0.0:8554?fifo_size=50000000&overrun_nonfatal=1" /dev/video20 1280 720 30
-```
+GoPro input and V4L2 output settings come from `config/default.yaml`.
 
 ## USB Camera To V4L2
 
@@ -40,6 +36,6 @@ Google Meet in Chrome.
 
 ## Next Internal Integration
 
-The remaining engineering step is replacing the external FFmpeg process with a
-single in-process FFmpeg adapter that emits `lmp::frame::Frame`, applies
+The remaining engineering step for USB is replacing the external FFmpeg process
+with an in-process capture adapter that emits `lmp::frame::Frame`, applies
 `FilterPipeline`, and writes through `V4l2Output`.

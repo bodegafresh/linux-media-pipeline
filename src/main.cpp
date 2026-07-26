@@ -1,5 +1,6 @@
 #include "lmp/capture/gopro_udp_source.hpp"
 #include "lmp/config/config_loader.hpp"
+#include "lmp/decoder/ffmpeg_decoder.hpp"
 #include "lmp/filters/filter_pipeline.hpp"
 #include "lmp/filters/filter_registry.hpp"
 #include "lmp/frame/frame.hpp"
@@ -21,6 +22,8 @@ void print_help() {
       << "  --help           Show this help.\n"
       << "  --open-capture   Bind the configured GoPro UDP listener.\n"
       << "  --check-output   Open the configured V4L2 output device.\n"
+      << "  --stream-live    Decode configured capture with FFmpeg and stream "
+         "to V4L2.\n"
       << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n";
 }
 
@@ -61,6 +64,7 @@ int main(int argc, char **argv) {
 
     auto open_capture = false;
     auto check_output = false;
+    auto stream_live = false;
     auto test_pattern = false;
     for (int index = 1; index < argc; ++index) {
       const auto option = std::string_view{argv[index]};
@@ -72,6 +76,8 @@ int main(int argc, char **argv) {
         open_capture = true;
       } else if (option == "--check-output") {
         check_output = true;
+      } else if (option == "--stream-live") {
+        stream_live = true;
       } else if (option == "--test-pattern") {
         test_pattern = true;
       } else {
@@ -93,8 +99,31 @@ int main(int argc, char **argv) {
       throw std::runtime_error("unsupported output type: " +
                                config.output.type);
     }
-    if (check_output || test_pattern) {
+    if (check_output || test_pattern || stream_live) {
       output.open();
+    }
+    if (stream_live) {
+      if (config.output.pixel_format != "RGB24") {
+        throw std::runtime_error("live output requires RGB24 pixel_format");
+      }
+      const auto width = static_cast<std::uint32_t>(config.output.width);
+      const auto height = static_cast<std::uint32_t>(config.output.height);
+      const auto fps = static_cast<std::uint32_t>(config.output.fps);
+      output.configure_rgb24(width, height, fps);
+      lmp::decoder::FfmpegDecoder decoder{config.capture.address, width,
+                                          height};
+      std::cout << "linux-media-pipeline " << lmp::version_string()
+                << " streaming live=true capture=" << capture.type()
+                << " input=" << config.capture.address
+                << " output=" << output.type() << " device=" << output.device()
+                << " format=" << config.output.pixel_format
+                << " width=" << width << " height=" << height << " fps=" << fps
+                << " filters=" << pipeline.size() << '\n';
+      while (true) {
+        auto frame = decoder.read_frame();
+        pipeline.process(frame);
+        output.write(frame);
+      }
     }
     if (test_pattern) {
       if (config.output.pixel_format != "RGB24") {

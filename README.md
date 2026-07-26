@@ -82,6 +82,12 @@ To verify the virtual camera endpoint for OBS:
 ./build/dev/lmp --check-output
 ```
 
+To make OBS show a live validation image, keep this process running:
+
+```bash
+./build/dev/lmp --test-pattern
+```
+
 See [OBS Validation](docs/obs.md).
 
 ## Development

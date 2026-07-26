@@ -26,6 +26,20 @@ capture=gopro_udp udp=0.0.0.0:8554 capture_open=true
 output=v4l2 device=/dev/video20 output_open=true
 ```
 
+## Show Video In OBS
+
+Keep the test pattern writer running:
+
+```bash
+./build/dev/lmp --test-pattern
+```
+
+Then open OBS and select `/dev/video20`. Use:
+
+- Video format: `RGB24` if OBS offers it.
+- Resolution: `1280x720`.
+- FPS: `30`.
+
 ## OBS Setup
 
 1. Add a Video Capture Device source.
@@ -34,6 +48,6 @@ output=v4l2 device=/dev/video20 output_open=true
 
 ## Remaining Live Video Work
 
-The project can now validate the GoPro UDP listener and V4L2 device. The final
-live-video bridge still needs FFmpeg MPEG-TS demux/decode and continuous frame
-writes into the V4L2 device.
+The project can now validate the GoPro UDP listener and stream a V4L2 test pattern
+into OBS. The final live-video bridge still needs FFmpeg MPEG-TS demux/decode so
+the test pattern can be replaced by decoded GoPro frames.

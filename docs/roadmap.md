@@ -120,6 +120,7 @@ the fallback segmentation with real ONNX Runtime session execution.
 - CLI `--open-capture` flag for explicit capture listener validation. Done.
 - `IOutputSink` and `V4l2Output` lifecycle. Done.
 - CLI `--check-output` flag for OBS virtual camera endpoint validation. Done.
+- CLI `--test-pattern` RGB24 writer for OBS visual validation. Done.
 - FFmpeg MPEG-TS demux/decode. Pending.
 - Continuous V4L2 frame streaming. Pending.
 - End-to-end GoPro -> OBS streaming. Pending.

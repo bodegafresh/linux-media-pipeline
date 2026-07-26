@@ -18,6 +18,8 @@ public:
 
   void open() override;
   void close() noexcept override;
+  void configure_rgb24(std::uint32_t width, std::uint32_t height,
+                       std::uint32_t fps);
   void write(const frame::Frame &frame) override;
   [[nodiscard]] bool is_open() const noexcept override;
   [[nodiscard]] std::string_view type() const noexcept override;

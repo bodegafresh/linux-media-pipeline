@@ -3,8 +3,14 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#ifdef __linux__
+#include <linux/videodev2.h>
+#endif
 #include <stdexcept>
 #include <string>
+#ifdef __linux__
+#include <sys/ioctl.h>
+#endif
 #include <unistd.h>
 
 namespace lmp::output {
@@ -43,6 +49,43 @@ void V4l2Output::close() noexcept {
     ::close(fd_);
     fd_ = invalid_fd;
   }
+}
+
+void V4l2Output::configure_rgb24(std::uint32_t width, std::uint32_t height,
+                                 std::uint32_t fps) {
+  if (!is_open()) {
+    throw std::runtime_error("V4L2 output must be open before configuration");
+  }
+  if (width == 0U || height == 0U || fps == 0U) {
+    throw std::invalid_argument("V4L2 width, height, and fps must be non-zero");
+  }
+
+#ifdef __linux__
+  v4l2_format format{};
+  format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+  format.fmt.pix.width = width;
+  format.fmt.pix.height = height;
+  format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
+  format.fmt.pix.field = V4L2_FIELD_NONE;
+  format.fmt.pix.bytesperline = width * 3U;
+  format.fmt.pix.sizeimage = format.fmt.pix.bytesperline * height;
+  if (::ioctl(fd_, VIDIOC_S_FMT, &format) != 0) {
+    throw std::runtime_error("cannot configure V4L2 RGB24 format on " +
+                             device_ + ": " + std::strerror(errno));
+  }
+
+  v4l2_streamparm parameters{};
+  parameters.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+  parameters.parm.output.timeperframe.numerator = 1U;
+  parameters.parm.output.timeperframe.denominator = fps;
+  static_cast<void>(::ioctl(fd_, VIDIOC_S_PARM, &parameters));
+#else
+  static_cast<void>(width);
+  static_cast<void>(height);
+  static_cast<void>(fps);
+  throw std::runtime_error(
+      "V4L2 format configuration is only supported on Linux");
+#endif
 }
 
 void V4l2Output::write(const frame::Frame &frame) {

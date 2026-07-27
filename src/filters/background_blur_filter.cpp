@@ -499,7 +499,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
           radius, foreground_threshold, std::move(backend), brightness,
           contrast, saturation, false, 1.0, 1.0, "luminance", 0.28, 0.42,
           "assets/models/person-segmentation.onnx", 3U, 0.70, "tracked_center",
-          "", "", "auto", true, "CPU", 1U, 3U) {}
+          "", "", "auto", true, "CPU", 1U, 3U, false) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -510,7 +510,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     std::string fallback_mask_mode, std::string input_shape,
     std::string output_shape, std::string requested_provider,
     bool allow_provider_fallback, std::string openvino_device,
-    std::uint32_t mask_expand, std::uint32_t mask_feather)
+    std::uint32_t mask_expand, std::uint32_t mask_feather, bool invert_mask)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -524,7 +524,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       requested_provider_(std::move(requested_provider)),
       allow_provider_fallback_(allow_provider_fallback),
       openvino_device_(std::move(openvino_device)), mask_expand_(mask_expand),
-      mask_feather_(mask_feather), onnx_error_reported_(false) {
+      mask_feather_(mask_feather), invert_mask_(invert_mask),
+      onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -645,6 +646,12 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   }
   try {
     auto mask = onnx_engine_->segment_person(frame);
+    if (invert_mask_) {
+      mask = ai::invert_mask(mask);
+      frame.metadata()["segmentation_mask_inverted"] = "true";
+    } else {
+      frame.metadata()["segmentation_mask_inverted"] = "false";
+    }
     frame.metadata()["segmentation_mask_coverage_raw"] =
         std::to_string(ai::mask_coverage(mask, foreground_threshold_));
     const auto timing = onnx_engine_->last_timing();

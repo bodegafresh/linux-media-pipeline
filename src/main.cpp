@@ -306,6 +306,8 @@ public:
                 "segmentation_inference_backend");
     report_once(metadata, "segmentation_inference_device",
                 "segmentation_inference_device");
+    report_once(metadata, "segmentation_mask_inverted",
+                "segmentation_mask_inverted");
     report_once(metadata, "segmentation_mask_coverage_raw",
                 "segmentation_mask_coverage_raw");
     report_once(metadata, "segmentation_mask_coverage_refined",

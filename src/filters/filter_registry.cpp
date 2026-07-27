@@ -217,7 +217,8 @@ FilterRegistry create_default_registry() {
             detail::bool_parameter(config, "allow_provider_fallback", true),
             detail::string_parameter(config, "openvino_device", "CPU"),
             detail::coordinate_parameter(config, "mask_expand", 1U),
-            detail::coordinate_parameter(config, "mask_feather", 3U));
+            detail::coordinate_parameter(config, "mask_feather", 3U),
+            detail::bool_parameter(config, "invert_mask", false));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

@@ -134,6 +134,15 @@ SegmentationMask refine_mask(const SegmentationMask &mask,
   return SegmentationMask{mask.width(), mask.height(), std::move(feathered)};
 }
 
+SegmentationMask invert_mask(const SegmentationMask &mask) {
+  std::vector<std::uint8_t> values;
+  values.reserve(mask.values().size());
+  for (const auto value : mask.values()) {
+    values.push_back(static_cast<std::uint8_t>(255U - value));
+  }
+  return SegmentationMask{mask.width(), mask.height(), std::move(values)};
+}
+
 double mask_coverage(const SegmentationMask &mask,
                      std::uint8_t threshold) noexcept {
   if (mask.values().empty()) {

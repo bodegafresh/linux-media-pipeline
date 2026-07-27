@@ -111,6 +111,14 @@ Values near `1.0` mean the model is classifying almost the whole frame as
 foreground, so little or no background blur will be visible. Values around
 `0.20` to `0.55` are usually more plausible for a seated presenter.
 
+If the model output uses the opposite polarity, set:
+
+```yaml
+invert_mask: true
+```
+
+The startup diagnostics will print `segmentation_mask_inverted=true`.
+
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.

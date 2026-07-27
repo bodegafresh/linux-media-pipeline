@@ -31,6 +31,7 @@ private:
                                            std::uint8_t threshold,
                                            std::uint32_t expand_radius,
                                            std::uint32_t feather_radius);
+[[nodiscard]] SegmentationMask invert_mask(const SegmentationMask &mask);
 [[nodiscard]] double mask_coverage(const SegmentationMask &mask,
                                    std::uint8_t threshold) noexcept;
 

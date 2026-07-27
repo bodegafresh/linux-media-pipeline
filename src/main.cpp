@@ -316,11 +316,13 @@ public:
       : interval_seconds_(interval_seconds),
         window_started_(std::chrono::steady_clock::now()) {}
 
-  void observe(std::chrono::steady_clock::duration processing_time) {
+  void observe(std::chrono::steady_clock::duration processing_time,
+               std::uint64_t dropped_frames = 0U) {
     if (!interval_seconds_.has_value()) {
       return;
     }
     ++frames_;
+    dropped_frames_ += dropped_frames;
     total_processing_time_ += processing_time;
     max_processing_time_ = std::max(max_processing_time_, processing_time);
 
@@ -339,9 +341,14 @@ public:
         std::chrono::duration<double, std::milli>(max_processing_time_).count();
     const auto fps = static_cast<double>(frames_) / elapsed_seconds;
     std::cout << "runtime_stats fps=" << fps << " avg_frame_ms=" << average_ms
-              << " max_frame_ms=" << max_ms << " frames=" << frames_ << '\n';
+              << " max_frame_ms=" << max_ms << " frames=" << frames_;
+    if (dropped_frames_ > 0U) {
+      std::cout << " dropped_frames=" << dropped_frames_;
+    }
+    std::cout << '\n';
 
     frames_ = 0U;
+    dropped_frames_ = 0U;
     total_processing_time_ = std::chrono::steady_clock::duration::zero();
     max_processing_time_ = std::chrono::steady_clock::duration::zero();
     window_started_ = now;
@@ -351,6 +358,7 @@ private:
   std::optional<double> interval_seconds_;
   std::chrono::steady_clock::time_point window_started_;
   std::uint64_t frames_ = 0U;
+  std::uint64_t dropped_frames_ = 0U;
   std::chrono::steady_clock::duration total_processing_time_ =
       std::chrono::steady_clock::duration::zero();
   std::chrono::steady_clock::duration max_processing_time_ =
@@ -1075,13 +1083,30 @@ int main(int argc, char **argv) {
                 << plan << "\"\n";
       RuntimeMetadataReporter runtime_metadata;
       StatsReporter stats{stats_every};
+      const auto frame_period =
+          std::chrono::duration<double>{1.0 / static_cast<double>(fps)};
+      auto next_output_time = std::chrono::steady_clock::now() + frame_period;
       while (true) {
         const auto frame_started = std::chrono::steady_clock::now();
         auto frame = decoder.read_frame();
         pipeline.process(frame);
         runtime_metadata.report(frame.metadata());
         output.write(frame);
-        stats.observe(std::chrono::steady_clock::now() - frame_started);
+        auto dropped_frames = std::uint64_t{0U};
+        auto now = std::chrono::steady_clock::now();
+        next_output_time += frame_period;
+        constexpr auto kMaxDropsPerIteration = 3U;
+        while (now > next_output_time + frame_period &&
+               dropped_frames < kMaxDropsPerIteration) {
+          static_cast<void>(decoder.read_frame());
+          next_output_time += frame_period;
+          ++dropped_frames;
+          now = std::chrono::steady_clock::now();
+        }
+        if (now > next_output_time + (4 * frame_period)) {
+          next_output_time = now;
+        }
+        stats.observe(now - frame_started, dropped_frames);
       }
     }
     if (test_pattern) {

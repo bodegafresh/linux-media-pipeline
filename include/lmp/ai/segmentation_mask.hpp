@@ -27,5 +27,9 @@ private:
 
 [[nodiscard]] SegmentationMask threshold_mask(const SegmentationMask &mask,
                                               std::uint8_t threshold);
+[[nodiscard]] SegmentationMask refine_mask(const SegmentationMask &mask,
+                                           std::uint8_t threshold,
+                                           std::uint32_t expand_radius,
+                                           std::uint32_t feather_radius);
 
 } // namespace lmp::ai

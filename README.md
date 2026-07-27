@@ -162,6 +162,9 @@ two channels exist, the person channel is used. If ONNX Runtime or the model is
 missing, the pipeline keeps running with the deterministic fallback.
 If a model does not expose readable tensor shapes, set `input_shape` and
 `output_shape` in the preset, for example `1x3x256x256` and `1x1x256x256`.
+The AI blur preset also refines the mask before compositing: `mask_expand`
+protects the person edge and `mask_feather` softens the transition into the
+blurred background.
 
 Run the real AI background blur preset with:
 

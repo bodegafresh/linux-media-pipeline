@@ -76,15 +76,18 @@ __kernel void background_blur(__global const uchar *input,
   const uint mask_x = min((source_x * mask_width_px) / width, mask_width_px - 1U);
   const uint mask_y = min((source_y * mask_height_px) / height, mask_height_px - 1U);
   const uchar mask_value = mask[(mask_y * mask_width_px) + mask_x];
-  const bool foreground = mask_mode == 2U ? mask_value >= foreground_threshold
-                          : mask_mode == 1U ? center_foreground
-                          : luma >= foreground_threshold;
+  const float foreground_alpha =
+      mask_mode == 2U ? clamp(((float)mask_value - (float)foreground_threshold) /
+                                  (255.0f - (float)foreground_threshold),
+                              0.0f, 1.0f)
+      : (mask_mode == 1U ? (center_foreground ? 1.0f : 0.0f)
+                         : (luma >= foreground_threshold ? 1.0f : 0.0f));
 
   float out_red = red;
   float out_green = green;
   float out_blue = blue;
 
-  if (!foreground) {
+  if (foreground_alpha < 1.0f) {
     uint count = 0;
     uint red_sum = 0;
     uint green_sum = 0;
@@ -101,9 +104,12 @@ __kernel void background_blur(__global const uchar *input,
         ++count;
       }
     }
-    out_red = (float)((red_sum + (count / 2U)) / count);
-    out_green = (float)((green_sum + (count / 2U)) / count);
-    out_blue = (float)((blue_sum + (count / 2U)) / count);
+    const float blurred_red = (float)((red_sum + (count / 2U)) / count);
+    const float blurred_green = (float)((green_sum + (count / 2U)) / count);
+    const float blurred_blue = (float)((blue_sum + (count / 2U)) / count);
+    out_red = (red * foreground_alpha) + (blurred_red * (1.0f - foreground_alpha));
+    out_green = (green * foreground_alpha) + (blurred_green * (1.0f - foreground_alpha));
+    out_blue = (blue * foreground_alpha) + (blurred_blue * (1.0f - foreground_alpha));
   }
 
   out_red = ((out_red - 128.0f) * contrast) + 128.0f + brightness;
@@ -420,7 +426,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                            brightness, contrast, saturation, false, 1.0, 1.0,
                            "luminance", 0.28, 0.42,
                            "assets/models/person-segmentation.onnx", 3U, 0.70,
-                           "tracked_center", "", "", "auto", true) {}
+                           "tracked_center", "", "", "auto", true, 1U, 3U) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -430,7 +436,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t inference_interval, double mask_smoothing,
     std::string fallback_mask_mode, std::string input_shape,
     std::string output_shape, std::string requested_provider,
-    bool allow_provider_fallback)
+    bool allow_provider_fallback, std::uint32_t mask_expand,
+    std::uint32_t mask_feather)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -443,9 +450,14 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       output_shape_(std::move(output_shape)),
       requested_provider_(std::move(requested_provider)),
       allow_provider_fallback_(allow_provider_fallback),
+      mask_expand_(mask_expand), mask_feather_(mask_feather),
       onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
+  }
+  if (foreground_threshold_ >= 255U) {
+    throw std::invalid_argument(
+        "background_blur foreground_threshold must be < 255");
   }
   if (contrast_ < 0.0) {
     throw std::invalid_argument("background_blur contrast must be >= 0");
@@ -535,7 +547,12 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   }
   try {
     auto mask = onnx_engine_->segment_person(frame);
+    mask = ai::refine_mask(mask, foreground_threshold_, mask_expand_,
+                           mask_feather_);
     frame.metadata()["background_blur_mask"] = "onnx";
+    frame.metadata()["background_blur_mask_refinement"] =
+        "expand:" + std::to_string(mask_expand_) +
+        ",feather:" + std::to_string(mask_feather_);
     return mask;
   } catch (const std::exception &error) {
     frame.metadata()["background_blur_mask"] =
@@ -580,8 +597,18 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
   for (std::uint32_t y = 0; y < frame.height(); ++y) {
     for (std::uint32_t x = 0; x < frame.width(); ++x) {
       const auto index = detail::pixel_index(x, y, frame.width());
-      auto pixel = mask->at(x, y) >= foreground_threshold_ ? original[index]
-                                                           : blurred[index];
+      const auto alpha =
+          std::clamp((static_cast<double>(mask->at(x, y)) -
+                      static_cast<double>(foreground_threshold_)) /
+                         (255.0 - static_cast<double>(foreground_threshold_)),
+                     0.0, 1.0);
+      auto pixel = detail::RgbPixel{
+          detail::clamp_to_byte((original[index].red * alpha) +
+                                (blurred[index].red * (1.0 - alpha))),
+          detail::clamp_to_byte((original[index].green * alpha) +
+                                (blurred[index].green * (1.0 - alpha))),
+          detail::clamp_to_byte((original[index].blue * alpha) +
+                                (blurred[index].blue * (1.0 - alpha)))};
       auto red = ((pixel.red - 128.0) * contrast_) + 128.0 + brightness_;
       auto green = ((pixel.green - 128.0) * contrast_) + 128.0 + brightness_;
       auto blue = ((pixel.blue - 128.0) * contrast_) + 128.0 + brightness_;

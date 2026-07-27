@@ -214,7 +214,9 @@ FilterRegistry create_default_registry() {
             detail::string_parameter(config, "input_shape", ""),
             detail::string_parameter(config, "output_shape", ""),
             detail::string_parameter(config, "provider", "auto"),
-            detail::bool_parameter(config, "allow_provider_fallback", true));
+            detail::bool_parameter(config, "allow_provider_fallback", true),
+            detail::coordinate_parameter(config, "mask_expand", 1U),
+            detail::coordinate_parameter(config, "mask_feather", 3U));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

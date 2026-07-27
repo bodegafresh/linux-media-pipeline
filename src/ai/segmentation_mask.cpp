@@ -68,4 +68,70 @@ SegmentationMask threshold_mask(const SegmentationMask &mask,
   return SegmentationMask{mask.width(), mask.height(), std::move(values)};
 }
 
+SegmentationMask refine_mask(const SegmentationMask &mask,
+                             std::uint8_t threshold,
+                             std::uint32_t expand_radius,
+                             std::uint32_t feather_radius) {
+  auto expanded = std::vector<std::uint8_t>{};
+  expanded.reserve(mask.values().size());
+  const auto expand = static_cast<int>(expand_radius);
+  for (std::uint32_t y = 0; y < mask.height(); ++y) {
+    for (std::uint32_t x = 0; x < mask.width(); ++x) {
+      auto foreground = false;
+      for (auto dy = -expand; dy <= expand && !foreground; ++dy) {
+        const auto sample_y = static_cast<int>(y) + dy;
+        if (sample_y < 0 || sample_y >= static_cast<int>(mask.height())) {
+          continue;
+        }
+        for (auto dx = -expand; dx <= expand; ++dx) {
+          const auto sample_x = static_cast<int>(x) + dx;
+          if (sample_x < 0 || sample_x >= static_cast<int>(mask.width())) {
+            continue;
+          }
+          if (mask.at(static_cast<std::uint32_t>(sample_x),
+                      static_cast<std::uint32_t>(sample_y)) >= threshold) {
+            foreground = true;
+            break;
+          }
+        }
+      }
+      expanded.push_back(foreground ? 255U : 0U);
+    }
+  }
+
+  if (feather_radius == 0U) {
+    return SegmentationMask{mask.width(), mask.height(), std::move(expanded)};
+  }
+
+  const auto feather = static_cast<int>(feather_radius);
+  auto feathered = std::vector<std::uint8_t>{};
+  feathered.reserve(expanded.size());
+  for (std::uint32_t y = 0; y < mask.height(); ++y) {
+    for (std::uint32_t x = 0; x < mask.width(); ++x) {
+      auto sum = std::uint32_t{0U};
+      auto count = std::uint32_t{0U};
+      for (auto dy = -feather; dy <= feather; ++dy) {
+        const auto sample_y = static_cast<int>(y) + dy;
+        if (sample_y < 0 || sample_y >= static_cast<int>(mask.height())) {
+          continue;
+        }
+        for (auto dx = -feather; dx <= feather; ++dx) {
+          const auto sample_x = static_cast<int>(x) + dx;
+          if (sample_x < 0 || sample_x >= static_cast<int>(mask.width())) {
+            continue;
+          }
+          const auto index =
+              (static_cast<std::size_t>(sample_y) * mask.width()) +
+              static_cast<std::size_t>(sample_x);
+          sum += expanded[index];
+          ++count;
+        }
+      }
+      feathered.push_back(
+          static_cast<std::uint8_t>((sum + (count / 2U)) / count));
+    }
+  }
+  return SegmentationMask{mask.width(), mask.height(), std::move(feathered)};
+}
+
 } // namespace lmp::ai

@@ -14,16 +14,12 @@ pipeline:
   queue_size: 4
 
 filters:
-  - type: auto_frame
-    enabled: true
-    target_fill: 0.62
-    max_zoom: 1.7
-    smoothing: 0.84
-    dead_zone: 0.05
-    foreground_threshold: 128
   - type: background_blur
     enabled: true
     backend: opencl
+    auto_frame: true
+    target_fill: 0.62
+    max_zoom: 1.7
     radius: 1
     foreground_threshold: 128
     brightness: 2

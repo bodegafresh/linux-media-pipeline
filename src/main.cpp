@@ -324,6 +324,8 @@ public:
                 "segmentation_mask_largest_component");
     report_once(metadata, "segmentation_mask_coverage_component",
                 "segmentation_mask_coverage_component");
+    report_once(metadata, "segmentation_mask_quality",
+                "segmentation_mask_quality");
     report_once(metadata, "segmentation_mask_adaptive_threshold",
                 "segmentation_mask_adaptive_threshold");
     report_once(metadata, "segmentation_mask_coverage_adaptive",

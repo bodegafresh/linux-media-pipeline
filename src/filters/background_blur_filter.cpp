@@ -334,6 +334,8 @@ struct MaskQuality {
   double width_fraction;
   double height_fraction;
   double aspect;
+  double center_y_fraction;
+  double top_fraction;
 };
 
 std::optional<MaskQuality> mask_quality(const ai::SegmentationMask &mask,
@@ -361,9 +363,30 @@ std::optional<MaskQuality> mask_quality(const ai::SegmentationMask &mask,
 
   const auto box_width = static_cast<double>(max_x - min_x + 1U);
   const auto box_height = static_cast<double>(max_y - min_y + 1U);
+  const auto center_y =
+      (static_cast<double>(min_y) + static_cast<double>(max_y)) / 2.0;
   return MaskQuality{box_width / static_cast<double>(mask.width()),
                      box_height / static_cast<double>(mask.height()),
-                     box_width / box_height};
+                     box_width / box_height,
+                     center_y / static_cast<double>(mask.height()),
+                     static_cast<double>(min_y) /
+                         static_cast<double>(mask.height())};
+}
+
+std::string mask_quality_summary(const MaskQuality &quality) {
+  return "width:" + std::to_string(quality.width_fraction) +
+         ",height:" + std::to_string(quality.height_fraction) +
+         ",aspect:" + std::to_string(quality.aspect) +
+         ",center_y:" + std::to_string(quality.center_y_fraction) +
+         ",top:" + std::to_string(quality.top_fraction);
+}
+
+bool plausible_presenter_quality(const MaskQuality &quality) {
+  return quality.width_fraction >= 0.18 && quality.width_fraction <= 0.82 &&
+         quality.height_fraction >= 0.28 && quality.height_fraction <= 0.92 &&
+         quality.aspect >= 0.18 && quality.aspect <= 1.70 &&
+         quality.center_y_fraction >= 0.22 &&
+         quality.center_y_fraction <= 0.72 && quality.top_fraction <= 0.58;
 }
 
 bool plausible_presenter_mask(const ai::SegmentationMask &mask,
@@ -372,9 +395,7 @@ bool plausible_presenter_mask(const ai::SegmentationMask &mask,
   if (!quality.has_value()) {
     return false;
   }
-  return quality->width_fraction >= 0.16 && quality->width_fraction <= 0.88 &&
-         quality->height_fraction >= 0.24 && quality->height_fraction <= 0.98 &&
-         quality->aspect >= 0.14 && quality->aspect <= 2.20;
+  return plausible_presenter_quality(*quality);
 }
 
 std::optional<AdaptiveMask>
@@ -864,6 +885,31 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
             std::to_string(last_good_person_mask_reuse_count_);
         return last_good_person_mask_;
       }
+      return std::nullopt;
+    }
+    if (const auto quality = mask_quality(mask, foreground_threshold_)) {
+      frame.metadata()["segmentation_mask_quality"] =
+          mask_quality_summary(*quality);
+      if (!plausible_presenter_quality(*quality)) {
+        frame.metadata()["background_blur_mask"] =
+            "onnx_rejected_" + fallback_mask_mode_;
+        frame.metadata()["segmentation_mask_rejected"] = "shape";
+        constexpr auto kMaxPreviousMaskReuses = 6U;
+        if (last_good_person_mask_.has_value() &&
+            last_good_person_mask_reuse_count_ < kMaxPreviousMaskReuses) {
+          ++last_good_person_mask_reuse_count_;
+          frame.metadata()["background_blur_mask"] = "onnx_previous";
+          frame.metadata()["segmentation_mask_reused_previous"] = "true";
+          frame.metadata()["segmentation_mask_previous_reuse_count"] =
+              std::to_string(last_good_person_mask_reuse_count_);
+          return last_good_person_mask_;
+        }
+        return std::nullopt;
+      }
+    } else {
+      frame.metadata()["background_blur_mask"] =
+          "onnx_rejected_" + fallback_mask_mode_;
+      frame.metadata()["segmentation_mask_rejected"] = "shape:none";
       return std::nullopt;
     }
     const auto timing = onnx_engine_->last_timing();

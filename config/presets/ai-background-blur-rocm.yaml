@@ -35,10 +35,9 @@ filters:
     keep_largest_component: true
     min_mask_coverage: 0.05
     max_mask_coverage: 0.80
-    fallback_mask_mode: tracked_center
+    fallback_mask_mode: luminance
     mask_width: 0.78
     mask_height: 1.08
-    hint_y_offset: -0.20
     radius: 7
     foreground_threshold: 96
     brightness: 2

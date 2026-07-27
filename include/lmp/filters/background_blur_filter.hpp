@@ -71,7 +71,6 @@ private:
   bool keep_largest_component_;
   double min_mask_coverage_;
   double max_mask_coverage_;
-  double hint_y_offset_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable std::optional<ai::SegmentationMask> last_good_person_mask_;
   mutable std::uint32_t last_good_person_mask_reuse_count_ = 0;

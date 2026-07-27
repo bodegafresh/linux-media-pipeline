@@ -18,14 +18,14 @@ filters:
     enabled: true
     target_fill: 0.62
     max_zoom: 1.7
+    smoothing: 0.84
+    dead_zone: 0.05
     foreground_threshold: 128
   - type: background_blur
     enabled: true
+    backend: opencl
     radius: 1
     foreground_threshold: 128
-  - type: color_adjust
-    enabled: true
-    backend: opencl
     brightness: 2
     contrast: 1.04
     saturation: 1.03

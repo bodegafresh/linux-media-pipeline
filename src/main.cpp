@@ -149,15 +149,25 @@ int main(int argc, char **argv) {
                 << " filter_backend=requested:" << config.gpu.backend
                 << " filters=" << pipeline.size()
                 << " filters_active=" << filters_active << '\n';
-      bool reported_runtime_backend = false;
+      bool reported_filter_backend = false;
+      bool reported_background_blur_backend = false;
       while (true) {
         auto frame = decoder.read_frame();
         pipeline.process(frame);
-        if (!reported_runtime_backend) {
+        if (!reported_filter_backend) {
           if (const auto found = frame.metadata().find("filter_backend");
               found != frame.metadata().end()) {
             std::cout << "filter_backend_active=" << found->second << '\n';
-            reported_runtime_backend = true;
+            reported_filter_backend = true;
+          }
+        }
+        if (!reported_background_blur_backend) {
+          if (const auto found =
+                  frame.metadata().find("background_blur_backend");
+              found != frame.metadata().end()) {
+            std::cout << "background_blur_backend_active=" << found->second
+                      << '\n';
+            reported_background_blur_backend = true;
           }
         }
         output.write(frame);
@@ -180,15 +190,25 @@ int main(int argc, char **argv) {
                 << " filter_backend=requested:" << config.gpu.backend
                 << " filters=" << pipeline.size()
                 << " filters_active=" << filters_active << '\n';
-      bool reported_runtime_backend = false;
+      bool reported_filter_backend = false;
+      bool reported_background_blur_backend = false;
       for (std::uint32_t frame_index = 0;; ++frame_index) {
         auto frame = make_test_pattern(width, height, frame_index);
         pipeline.process(frame);
-        if (!reported_runtime_backend) {
+        if (!reported_filter_backend) {
           if (const auto found = frame.metadata().find("filter_backend");
               found != frame.metadata().end()) {
             std::cout << "filter_backend_active=" << found->second << '\n';
-            reported_runtime_backend = true;
+            reported_filter_backend = true;
+          }
+        }
+        if (!reported_background_blur_backend) {
+          if (const auto found =
+                  frame.metadata().find("background_blur_backend");
+              found != frame.metadata().end()) {
+            std::cout << "background_blur_backend_active=" << found->second
+                      << '\n';
+            reported_background_blur_backend = true;
           }
         }
         output.write(frame);

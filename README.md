@@ -74,10 +74,10 @@ If OpenCL is not available at runtime, `color_adjust` falls back to CPU and the
 active backend line will say `filter_backend_active=cpu`.
 
 Use `config/presets/ai-presenter.yaml` for tutorial/meeting framing: it crops
-toward the detected person and applies light OpenCL color cleanup. Background
-blur is intentionally kept out of that realtime preset because it is still CPU
-bound. Use `config/presets/ai-background-blur.yaml` only when you want to test
-the experimental blur path.
+toward the detected person and applies light OpenCL color cleanup. Use
+`config/presets/ai-background-blur.yaml` when you also want background blur; that
+preset fuses blur and color cleanup in the OpenCL blur filter and falls back to
+CPU if no GPU runtime is available.
 
 ## USB Camera
 

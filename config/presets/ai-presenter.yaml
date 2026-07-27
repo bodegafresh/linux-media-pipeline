@@ -18,6 +18,8 @@ filters:
     enabled: true
     target_fill: 0.62
     max_zoom: 1.7
+    smoothing: 0.84
+    dead_zone: 0.05
     foreground_threshold: 128
   - type: color_adjust
     enabled: true

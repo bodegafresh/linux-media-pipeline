@@ -16,11 +16,10 @@ pipeline:
 filters:
   - type: background_blur
     enabled: true
+    backend: opencl
     radius: 3
     foreground_threshold: 128
-  - type: contrast
-    enabled: true
-    factor: 1.05
+    contrast: 1.05
 
 output:
   type: v4l2

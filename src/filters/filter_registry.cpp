@@ -193,16 +193,22 @@ FilterRegistry create_default_registry() {
       "background_blur", [](const config::FilterConfig &config) {
         return std::make_unique<BackgroundBlurFilter>(
             detail::radius_parameter(config, 1U),
-            static_cast<std::uint8_t>(detail::integer_parameter(
-                config, "foreground_threshold", 128)));
+            static_cast<std::uint8_t>(
+                detail::integer_parameter(config, "foreground_threshold", 128)),
+            detail::string_parameter(config, "backend", "cpu"),
+            detail::double_parameter(config, "brightness", 0.0),
+            detail::double_parameter(config, "contrast", 1.0),
+            detail::double_parameter(config, "saturation", 1.0));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {
         return std::make_unique<AutoFrameFilter>(
             detail::double_parameter(config, "target_fill", 0.62),
             detail::double_parameter(config, "max_zoom", 1.8),
-            static_cast<std::uint8_t>(detail::integer_parameter(
-                config, "foreground_threshold", 128)));
+            static_cast<std::uint8_t>(
+                detail::integer_parameter(config, "foreground_threshold", 128)),
+            detail::double_parameter(config, "smoothing", 0.82),
+            detail::double_parameter(config, "dead_zone", 0.04));
       });
   return registry;
 }

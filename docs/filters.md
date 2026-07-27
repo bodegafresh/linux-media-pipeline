@@ -32,14 +32,16 @@ filter_backend_active=opencl
   the binary and system runtime support it.
 - `config/presets/ai-presenter.yaml`: auto-framing and OpenCL color cleanup for
   tutorial/meeting framing.
-- `config/presets/ai-background-blur.yaml`: experimental auto-framing plus CPU
-  background blur with the smallest blur radius.
-- `config/presets/background-blur.yaml`: background blur plus light contrast.
+- `config/presets/ai-background-blur.yaml`: auto-framing plus fused OpenCL
+  background blur and color cleanup, with CPU fallback.
+- `config/presets/background-blur.yaml`: fused OpenCL background blur plus light
+  contrast.
 - `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
 
-For calls, prefer `clean.yaml` or no filters. Filters such as `sharpen`,
-`background_blur`, `sobel`, `histogram` overlays, and text overlays are CPU-heavy
-and can add latency at 1280x720.
+For calls, prefer `ai-presenter.yaml` when framing matters and
+`ai-background-blur.yaml` when your GPU can keep up. Filters such as `sharpen`,
+`sobel`, `histogram` overlays, and text overlays are CPU-heavy and can add
+latency at 1280x720.
 
 The CLI reports both the requested backend and the backend used by the first
 processed frame:
@@ -49,9 +51,15 @@ filter_backend=requested:opencl filters=1 filters_active=[color_adjust]
 filter_backend_active=opencl
 ```
 
-If it prints `filter_backend_active=cpu`, the filter fell back because OpenCL was
-not compiled in or no usable OpenCL device was available. `auto_frame`,
-`background_blur`, `sharpen`, overlays, and histogram still run on CPU.
+If it prints `filter_backend_active=cpu`, `color_adjust` fell back because
+OpenCL was not compiled in or no usable OpenCL device was available.
+`background_blur` reports its own runtime backend:
+
+```text
+background_blur_backend_active=opencl
+```
+
+`auto_frame`, `sharpen`, overlays, and histogram still run on CPU.
 
 `auto_frame` crops toward the detected foreground and scales back to the output
 resolution. Useful knobs:
@@ -61,6 +69,8 @@ resolution. Useful knobs:
   enabled: true
   target_fill: 0.62
   max_zoom: 1.7
+  smoothing: 0.84
+  dead_zone: 0.05
   foreground_threshold: 128
 ```
 

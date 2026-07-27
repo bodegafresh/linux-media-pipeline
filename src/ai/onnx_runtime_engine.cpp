@@ -41,7 +41,7 @@ constexpr auto kMaxModelDimension = std::int64_t{4096};
 constexpr auto kMaxTensorPixels = std::uint64_t{4096ULL * 4096ULL};
 
 std::int64_t dimension_or(std::int64_t value, std::int64_t fallback) noexcept {
-  return value > 0 ? value : fallback;
+  return value > 0 && value <= kMaxModelDimension ? value : fallback;
 }
 
 bool dimensions_are_sane(std::uint32_t width, std::uint32_t height) noexcept {
@@ -203,27 +203,21 @@ public:
           static_cast<std::uint32_t>(dimension_or(output_shape[1], 1));
       const auto last_channel_dim =
           static_cast<std::uint32_t>(dimension_or(output_shape[3], 1));
-      if (first_channel_dim > 1U && first_channel_dim <= 4U) {
+      if (last_channel_dim <= 4U) {
+        channel_count = last_channel_dim;
+        person_channel = channel_count > 1U ? 1U : 0U;
+        channels_last = true;
+        mask_height = static_cast<std::uint32_t>(dimension_or(
+            output_shape[1], static_cast<std::int64_t>(input_height)));
+        mask_width = static_cast<std::uint32_t>(dimension_or(
+            output_shape[2], static_cast<std::int64_t>(input_width)));
+      } else if (first_channel_dim <= 4U) {
         channel_count = first_channel_dim;
-        person_channel = std::min<std::uint32_t>(1U, channel_count - 1U);
+        person_channel = channel_count > 1U ? 1U : 0U;
         mask_height = static_cast<std::uint32_t>(dimension_or(
             output_shape[2], static_cast<std::int64_t>(input_height)));
         mask_width = static_cast<std::uint32_t>(dimension_or(
             output_shape[3], static_cast<std::int64_t>(input_width)));
-      } else if (last_channel_dim > 1U && last_channel_dim <= 4U) {
-        channel_count = last_channel_dim;
-        person_channel = std::min<std::uint32_t>(1U, channel_count - 1U);
-        channels_last = true;
-        mask_height = static_cast<std::uint32_t>(dimension_or(
-            output_shape[1], static_cast<std::int64_t>(input_height)));
-        mask_width = static_cast<std::uint32_t>(dimension_or(
-            output_shape[2], static_cast<std::int64_t>(input_width)));
-      } else if (last_channel_dim == 1U) {
-        channels_last = true;
-        mask_height = static_cast<std::uint32_t>(dimension_or(
-            output_shape[1], static_cast<std::int64_t>(input_height)));
-        mask_width = static_cast<std::uint32_t>(dimension_or(
-            output_shape[2], static_cast<std::int64_t>(input_width)));
       }
     }
     if (!dimensions_are_sane(mask_width, mask_height)) {

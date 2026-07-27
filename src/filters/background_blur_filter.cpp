@@ -472,8 +472,13 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     return std::nullopt;
   }
   if (onnx_engine_ == nullptr) {
-    onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
-        model_path_, inference_interval_, mask_smoothing_);
+    try {
+      onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
+          model_path_, inference_interval_, mask_smoothing_);
+    } catch (const std::exception &) {
+      frame.metadata()["background_blur_mask"] = "onnx_init_error_center";
+      return std::nullopt;
+    }
   }
   if (!onnx_engine_->available()) {
     frame.metadata()["background_blur_mask"] = "onnx_unavailable_center";

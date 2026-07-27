@@ -167,13 +167,6 @@ std::string canonical_provider(std::string_view provider) {
   if (provider == "cpu" || provider == "CPUExecutionProvider") {
     return "CPUExecutionProvider";
   }
-  if (provider == "rocm" || provider == "ROCmExecutionProvider" ||
-      provider == "ROCMExecutionProvider") {
-    return "ROCMExecutionProvider";
-  }
-  if (provider == "migraphx" || provider == "MIGraphXExecutionProvider") {
-    return "MIGraphXExecutionProvider";
-  }
   if (provider == "openvino" || provider == "OpenVINOExecutionProvider") {
     return "OpenVINOExecutionProvider";
   }
@@ -207,15 +200,19 @@ bool future_is_ready(std::future<SegmentationMask> &future) {
          future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
 
-void append_int_provider(Ort::SessionOptions &options, const char *symbol) {
-  using AppendProvider = OrtStatus *(*)(OrtSessionOptions *, int);
-  auto *raw_symbol = dlsym(RTLD_DEFAULT, symbol);
+void append_openvino_provider(Ort::SessionOptions &options) {
+  using AppendProvider = OrtStatus *(*)(OrtSessionOptions *, const char *);
+  auto *raw_symbol =
+      dlsym(RTLD_DEFAULT, "OrtSessionOptionsAppendExecutionProvider_OpenVINO");
   if (raw_symbol == nullptr) {
-    throw std::runtime_error(std::string{symbol} + " symbol was not loaded");
+    throw std::runtime_error(
+        "OrtSessionOptionsAppendExecutionProvider_OpenVINO symbol was not "
+        "loaded");
   }
   auto *append_provider = reinterpret_cast<AppendProvider>(raw_symbol);
-  Ort::ThrowOnError(append_provider(options, 0));
+  Ort::ThrowOnError(append_provider(options, "CPU_FP32"));
 }
+
 #endif
 
 } // namespace
@@ -557,11 +554,8 @@ private:
     auto requested = canonical_provider(requested_provider_);
     if (requested_provider_ == "auto") {
       if (provider_list_contains(available_providers_,
-                                 "MIGraphXExecutionProvider")) {
-        requested = "MIGraphXExecutionProvider";
-      } else if (provider_list_contains(available_providers_,
-                                        "ROCMExecutionProvider")) {
-        requested = "ROCMExecutionProvider";
+                                 "OpenVINOExecutionProvider")) {
+        requested = "OpenVINOExecutionProvider";
       } else {
         return;
       }
@@ -576,23 +570,15 @@ private:
     }
 
     try {
-      if (requested == "ROCMExecutionProvider") {
-        append_int_provider(session_options_,
-                            "OrtSessionOptionsAppendExecutionProvider_ROCM");
-        active_provider_ = requested;
-        return;
-      }
-      if (requested == "MIGraphXExecutionProvider") {
-        append_int_provider(
-            session_options_,
-            "OrtSessionOptionsAppendExecutionProvider_MIGraphX");
+      if (requested == "OpenVINOExecutionProvider") {
+        append_openvino_provider(session_options_);
         active_provider_ = requested;
         return;
       }
       provider_fallback_ = true;
       provider_fallback_reason_ =
-          requested + " available but activation is not implemented in this "
-                      "build; using CPUExecutionProvider";
+          requested + " available but activation is not enabled in this build; "
+                      "using CPUExecutionProvider";
     } catch (const std::exception &error) {
       provider_fallback_ = true;
       provider_fallback_reason_ =

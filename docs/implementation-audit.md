@@ -48,12 +48,14 @@ inference when it is not active.
 
 ## Current ONNX Provider Behavior
 
-The YAML parameter `provider` accepts `auto`, `cpu`, `rocm`, `migraphx`, and
-`openvino`. The engine reports available providers, requested provider, active
-provider, whether fallback occurred, and fallback reason. Today, `auto` and
-`cpu` select `CPUExecutionProvider`. Other providers are detected but not yet
-activated; if fallback is allowed, the engine reports the fallback and continues
-on CPU. If fallback is disabled, provider mismatch makes the engine unavailable.
+The YAML parameter `provider` accepts `auto`, `cpu`, and `openvino`. The engine
+reports available providers, requested provider, active provider, whether
+fallback occurred, and fallback reason. `auto` selects
+`OpenVINOExecutionProvider` only if ONNX Runtime exposes it; otherwise it selects
+`CPUExecutionProvider`. GPU work is intentionally kept in OpenCL filters.
+ROCm/MIGraphX providers are not considered because they can affect the host GPU
+stack used by tools such as Unreal Engine, DaVinci Resolve, and Blender.
+If fallback is disabled, provider mismatch makes the engine unavailable.
 
 ## Current Mask Representation
 
@@ -64,7 +66,7 @@ tracked-center approximations.
 
 ## Current Known Limitations
 
-- ONNX Runtime GPU execution providers are reported but not activated.
+- ONNX Runtime ROCm/MIGraphX execution providers are intentionally not used.
 - The OpenCL blur path still copies frame bytes to and from host memory.
 - ONNX inference runs inside the frame loop and is throttled by
   `inference_interval`.
@@ -76,8 +78,8 @@ tracked-center approximations.
 
 ## Planned Modifications
 
-- Activate supported ONNX Runtime providers explicitly and fail loudly when a
-  requested provider cannot be used and fallback is disabled.
+- Validate Fedora's OpenVINO packages to confirm whether they expose an ONNX
+  Runtime execution provider or only standalone OpenVINO APIs.
 - Split segmentation, mask refinement, tracking, background effects, and output
   pacing into explicit components with measured boundaries.
 - Add model metadata validation and clearer errors for model shape/layout

@@ -75,6 +75,8 @@ That line means `background_blur` is using the real
 using the fixed fallback mask instead of true person segmentation.
 The provider lines show what ONNX Runtime actually selected. A fallback of
 `true` means the requested provider was not used.
+Fedora OpenVINO packages are installed by the dependency script, but ONNX Runtime
+must still report `OpenVINOExecutionProvider` before the pipeline can use it.
 
 The AI blur preset exposes the main performance knobs:
 

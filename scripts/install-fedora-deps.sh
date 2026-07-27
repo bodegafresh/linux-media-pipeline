@@ -16,6 +16,10 @@ sudo dnf install -y \
   ffmpeg-devel \
   onnxruntime \
   onnxruntime-devel \
+  openvino \
+  openvino-devel \
+  openvino-plugins \
+  libopenvino-onnx-frontend \
   OpenCL-ICD-Loader-devel \
   opencl-headers \
   vulkan-headers \

@@ -503,11 +503,9 @@ BackgroundBlurFilter::BackgroundBlurFilter(
         "tracked_center");
   }
   if (requested_provider_ != "auto" && requested_provider_ != "cpu" &&
-      requested_provider_ != "rocm" && requested_provider_ != "migraphx" &&
       requested_provider_ != "openvino") {
     throw std::invalid_argument(
-        "background_blur provider must be auto, cpu, rocm, migraphx, or "
-        "openvino");
+        "background_blur provider must be auto, cpu, or openvino");
   }
   if (mask_width_ <= 0.0 || mask_height_ <= 0.0) {
     throw std::invalid_argument(

@@ -197,8 +197,13 @@ check that the model file exists, that Fedora installed `onnxruntime` and
 `./scripts/stream.sh install-model` installs the preferred ONNX Runtime model
 and its external `.data` weights file when required.
 
-The `provider` value in the preset can be `auto`, `cpu`, `rocm`, `migraphx`, or
-`openvino`. The project now reports what ONNX Runtime providers are available
+The `provider` value in the preset can be `auto`, `cpu`, or `openvino`. `auto`
+uses `OpenVINOExecutionProvider` only when ONNX Runtime reports it as available;
+otherwise it keeps ONNX Runtime on the stable CPU provider while OpenCL handles
+the GPU blur.
+Do not install `onnxruntime-rocm` for this project on a workstation that also
+depends on a stable graphics stack for Unreal Engine, DaVinci Resolve, Blender,
+or similar apps. The project reports what ONNX Runtime providers are available
 and which one is active. If `onnx_runtime_provider_fallback=true`, inference is
 not running on the requested provider.
 

@@ -159,6 +159,7 @@ model is missing, the pipeline keeps running with the deterministic fallback.
 Run the real AI background blur preset with:
 
 ```bash
+./scripts/stream.sh install-model
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ```
 
@@ -174,6 +175,13 @@ If it prints `background_blur_mask_active=onnx_unavailable_center` or
 `background_blur_mask_active=center`, the runtime is not using a real model yet;
 check that the model file exists and that Fedora installed `onnxruntime` and
 `onnxruntime-devel`.
+
+FFmpeg warnings are hidden by default so the runtime status lines stay readable.
+To temporarily restore FFmpeg diagnostics:
+
+```bash
+LMP_FFMPEG_LOG_LEVEL=warning ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+```
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
 [docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).

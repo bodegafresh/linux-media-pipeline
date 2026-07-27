@@ -75,13 +75,18 @@ public:
         session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
     const auto shape = input_info.GetShape();
     if (shape.size() == 4U) {
+      const auto looks_channels_last =
+          dimension_or(shape[3], 3) == 3 && dimension_or(shape[1], 256) != 3;
       input_shape_[0] = dimension_or(shape[0], 1);
-      input_shape_[1] = dimension_or(shape[1], 3);
+      input_shape_[1] = dimension_or(shape[1], looks_channels_last ? 256 : 3);
       input_shape_[2] = dimension_or(shape[2], 256);
-      input_shape_[3] = dimension_or(shape[3], 256);
+      input_shape_[3] = dimension_or(shape[3], looks_channels_last ? 3 : 256);
     }
 
-    ready_ = input_shape_[0] == 1 && input_shape_[1] == 3 &&
+    input_channels_last_ = input_shape_[3] == 3 && input_shape_[1] != 3;
+    ready_ = input_shape_[0] == 1 &&
+             ((input_channels_last_ && input_shape_[3] == 3) ||
+              (!input_channels_last_ && input_shape_[1] == 3)) &&
              input_shape_[2] > 0 && input_shape_[3] > 0;
   }
 
@@ -99,8 +104,10 @@ public:
       return *cached_mask_;
     }
 
-    const auto input_height = static_cast<std::uint32_t>(input_shape_[2]);
-    const auto input_width = static_cast<std::uint32_t>(input_shape_[3]);
+    const auto input_height = static_cast<std::uint32_t>(
+        input_channels_last_ ? input_shape_[1] : input_shape_[2]);
+    const auto input_width = static_cast<std::uint32_t>(
+        input_channels_last_ ? input_shape_[2] : input_shape_[3]);
     const auto source = filters::detail::read_packed_rgb(frame);
     std::vector<float> input(static_cast<std::size_t>(3U) * input_width *
                              input_height);
@@ -116,10 +123,17 @@ public:
         const auto pixel = source[filters::detail::pixel_index(
             source_x, source_y, frame.width())];
         const auto index = filters::detail::pixel_index(x, y, input_width);
-        input[index] = static_cast<float>(pixel.red) / 255.0F;
-        input[plane_size + index] = static_cast<float>(pixel.green) / 255.0F;
-        input[(2U * plane_size) + index] =
-            static_cast<float>(pixel.blue) / 255.0F;
+        if (input_channels_last_) {
+          const auto base = index * 3U;
+          input[base] = static_cast<float>(pixel.red) / 255.0F;
+          input[base + 1U] = static_cast<float>(pixel.green) / 255.0F;
+          input[base + 2U] = static_cast<float>(pixel.blue) / 255.0F;
+        } else {
+          input[index] = static_cast<float>(pixel.red) / 255.0F;
+          input[plane_size + index] = static_cast<float>(pixel.green) / 255.0F;
+          input[(2U * plane_size) + index] =
+              static_cast<float>(pixel.blue) / 255.0F;
+        }
       }
     }
 
@@ -225,6 +239,7 @@ private:
   std::uint64_t frame_index_ = 0;
   std::uint32_t inference_interval_ = 3;
   double mask_smoothing_ = 0.70;
+  bool input_channels_last_ = false;
   bool ready_ = false;
 #else
   explicit Impl(const std::string &) {}

@@ -1,6 +1,8 @@
 #include "lmp/decoder/ffmpeg_decoder.hpp"
 
+#include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #if LMP_HAS_FFMPEG
@@ -51,12 +53,47 @@ std::string ffmpeg_error(int code) {
   return buffer;
 }
 
+int ffmpeg_log_level_from_env() {
+  const auto *configured = std::getenv("LMP_FFMPEG_LOG_LEVEL");
+  if (configured == nullptr) {
+    return AV_LOG_ERROR;
+  }
+  const auto level = std::string_view{configured};
+  if (level == "quiet") {
+    return AV_LOG_QUIET;
+  }
+  if (level == "panic") {
+    return AV_LOG_PANIC;
+  }
+  if (level == "fatal") {
+    return AV_LOG_FATAL;
+  }
+  if (level == "error") {
+    return AV_LOG_ERROR;
+  }
+  if (level == "warning" || level == "warn") {
+    return AV_LOG_WARNING;
+  }
+  if (level == "info") {
+    return AV_LOG_INFO;
+  }
+  if (level == "verbose") {
+    return AV_LOG_VERBOSE;
+  }
+  if (level == "debug") {
+    return AV_LOG_DEBUG;
+  }
+  return AV_LOG_ERROR;
+}
+
 } // namespace
 
 class FfmpegDecoder::Impl {
 public:
   Impl(std::string input_url, std::uint32_t width, std::uint32_t height)
       : input_url_(std::move(input_url)), width_(width), height_(height) {
+    av_log_set_level(ffmpeg_log_level_from_env());
+
     AVDictionary *options = nullptr;
     av_dict_set(&options, "fflags", "nobuffer", 0);
     av_dict_set(&options, "flags", "low_delay", 0);

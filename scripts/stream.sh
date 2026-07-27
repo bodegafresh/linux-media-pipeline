@@ -6,12 +6,14 @@ usage() {
 Usage:
   ./scripts/stream.sh test-pattern [output_device] [config]
   ./scripts/stream.sh gopro-udp [output_device] [config]
+  ./scripts/stream.sh install-model
   ./scripts/stream.sh usb [input_device] [output_device] [width] [height] [fps]
 
 Examples:
   ./scripts/stream.sh test-pattern
   ./scripts/stream.sh gopro-udp
   ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
+  ./scripts/stream.sh install-model
   ./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
 EOF
 }
@@ -39,6 +41,16 @@ fi
 shift
 
 case "${mode}" in
+  install-model)
+    model_dir="assets/models"
+    model_path="${model_dir}/person-segmentation.onnx"
+    model_url="https://unpkg.com/jp.ikep.mediapipe.selfiesegmentation@1.0.1/ONNX/selfie_segmentation.onnx"
+    mkdir -p "${model_dir}"
+    echo "Downloading MediaPipe Selfie Segmentation ONNX model..."
+    curl -fL "${model_url}" -o "${model_path}"
+    echo "Installed ${model_path}"
+    ;;
+
   test-pattern)
     output_device="${1:-/dev/video20}"
     config="${2:-config/default.yaml}"

@@ -61,6 +61,7 @@ The terminal prints `filters_active=[...]` when filters are enabled.
 For the real AI background blur and auto-framing path, use:
 
 ```bash
+./scripts/stream.sh install-model
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ```
 
@@ -74,6 +75,13 @@ background_blur_mask_active=onnx
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because
 `assets/models/person-segmentation.onnx` is missing or incompatible.
+
+FFmpeg warning logs are suppressed by default to keep the important runtime lines
+visible. For decoder troubleshooting, opt in per command:
+
+```bash
+LMP_FFMPEG_LOG_LEVEL=warning ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+```
 
 ## OBS Setup
 

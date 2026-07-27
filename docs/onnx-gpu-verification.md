@@ -20,13 +20,29 @@ Current verification performs:
 - output mask sanity checks;
 - provider/fallback reporting.
 - ROCm activity snapshots from the wrapper scripts when `rocm-smi` is present.
+- stage timing:
+  `average_preprocess_ms`, `average_onnx_run_ms`, and
+  `average_postprocess_ms`.
 
 `gpu_execution_verified=true` requires all of:
 
 - `MIGraphXExecutionProvider` selected by ONNX Runtime;
+- or, explicitly, `ROCMExecutionProvider` selected by ONNX Runtime when testing
+  Fedora's ROCm package;
 - real inference success;
 - no provider fallback.
 
 A successful provider request is not enough by itself. If the active provider is
 still `CPUExecutionProvider`, the verification must remain false even if the
 OpenCL blur path is using the AMD GPU.
+
+During live streaming, the startup diagnostics also include:
+
+```text
+onnx_preprocess_ms=...
+onnx_inference_ms=...
+onnx_postprocess_ms=...
+```
+
+These are the last completed ONNX segmentation timings. They are intentionally
+separate from OpenCL background processing and global `runtime_stats`.

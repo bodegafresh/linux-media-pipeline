@@ -17,6 +17,12 @@ ONNX Runtime -> MIGraphXExecutionProvider -> AMD Radeon RX 6750 XT / gfx1031
 The application never marks ONNX inference as GPU accelerated unless ONNX
 Runtime both enumerates and activates `MIGraphXExecutionProvider`.
 
+Fedora 44's `onnxruntime-rocm` package may instead enumerate
+`ROCMExecutionProvider` and no `MIGraphXExecutionProvider`. That is a real AMD
+GPU ONNX Runtime provider, but it is not the desired MIGraphX path. Use it
+explicitly with `provider: rocm` when you want to validate the currently
+available Fedora GPU path.
+
 ## Safe Check Flow
 
 Run these commands before changing packages:
@@ -93,4 +99,18 @@ If the provider still does not enumerate, inspect:
 artifacts/runtime-linkage/ldd.txt
 artifacts/runtime-linkage/rpm-files.txt
 artifacts/runtime-linkage/duplicate-runtimes.txt
+```
+
+If the provider list shows:
+
+```text
+ROCMExecutionProvider
+CPUExecutionProvider
+```
+
+then use the Fedora ROCm preset:
+
+```bash
+./scripts/verify-onnx-gpu.sh rocm config/presets/ai-background-blur-rocm.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur-rocm.yaml --stats-every 5
 ```

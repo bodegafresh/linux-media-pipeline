@@ -16,6 +16,8 @@ Policy:
 - `provider: migraphx` requests `MIGraphXExecutionProvider`.
 - `provider: auto` requests MIGraphX only when ONNX Runtime enumerates it;
   otherwise it remains on CPU.
+- `provider: rocm` requests `ROCMExecutionProvider` explicitly when Fedora's
+  ROCm ONNX Runtime build exposes it. This is not the same as MIGraphX.
 - `provider: openvino` remains explicit and must not be presented as AMD GPU
   inference.
 

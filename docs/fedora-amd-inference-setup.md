@@ -55,5 +55,11 @@ Then rebuild and verify:
 ./scripts/benchmark-onnx-providers.sh config/presets/ai-background-blur-migraphx.yaml
 ```
 
-The provider list must show `MIGraphXExecutionProvider` before the live preset can
-use AMD GPU inference.
+The provider list must show `MIGraphXExecutionProvider` before the MIGraphX live
+preset can use AMD GPU inference. If Fedora shows `ROCMExecutionProvider`
+instead, use:
+
+```bash
+./scripts/verify-onnx-gpu.sh rocm config/presets/ai-background-blur-rocm.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur-rocm.yaml --stats-every 5
+```

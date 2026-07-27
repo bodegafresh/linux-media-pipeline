@@ -45,7 +45,7 @@ void print_help() {
          "and write artifacts/onnx-gpu-verification.json.\n"
       << "  --onnx-provider PROVIDER\n"
          "                   Provider for --verify-onnx-gpu: auto, cpu, "
-         "migraphx, or openvino.\n";
+         "migraphx, rocm, or openvino.\n";
 }
 
 void list_onnx_providers() {
@@ -108,15 +108,18 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
   const auto measured_runs = 20U;
   auto successful_runs = 0U;
   auto total_ms = 0.0;
+  auto total_preprocess_ms = 0.0;
+  auto total_onnx_run_ms = 0.0;
+  auto total_postprocess_ms = 0.0;
   auto p95_source = std::vector<double>{};
   p95_source.reserve(measured_runs);
 
   for (auto index = 0U; index < warmup_runs && model_loaded; ++index) {
-    static_cast<void>(engine.segment_person(frame));
+    static_cast<void>(engine.segment_person_blocking(frame));
   }
   for (auto index = 0U; index < measured_runs && model_loaded; ++index) {
     const auto started = std::chrono::steady_clock::now();
-    const auto mask = engine.segment_person(frame);
+    const auto mask = engine.segment_person_blocking(frame);
     const auto elapsed = std::chrono::steady_clock::now() - started;
     const auto elapsed_ms =
         std::chrono::duration<double, std::milli>(elapsed).count();
@@ -124,6 +127,10 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
     if (finite_output) {
       ++successful_runs;
       total_ms += elapsed_ms;
+      const auto timing = engine.last_timing();
+      total_preprocess_ms += timing.preprocess_ms;
+      total_onnx_run_ms += timing.inference_ms;
+      total_postprocess_ms += timing.postprocess_ms;
       p95_source.push_back(elapsed_ms);
     }
   }
@@ -131,6 +138,18 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
   const auto average_ms = successful_runs == 0U
                               ? 0.0
                               : total_ms / static_cast<double>(successful_runs);
+  const auto average_preprocess_ms =
+      successful_runs == 0U
+          ? 0.0
+          : total_preprocess_ms / static_cast<double>(successful_runs);
+  const auto average_onnx_run_ms =
+      successful_runs == 0U
+          ? 0.0
+          : total_onnx_run_ms / static_cast<double>(successful_runs);
+  const auto average_postprocess_ms =
+      successful_runs == 0U
+          ? 0.0
+          : total_postprocess_ms / static_cast<double>(successful_runs);
   const auto p95_ms =
       p95_source.empty()
           ? 0.0
@@ -139,7 +158,8 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
                 static_cast<std::size_t>((p95_source.size() * 95U) / 100U))];
   const auto provider_active = std::string{engine.active_provider()};
   const auto inference_successful = successful_runs == measured_runs;
-  const auto gpu_verified = provider_active == "MIGraphXExecutionProvider" &&
+  const auto gpu_verified = (provider_active == "MIGraphXExecutionProvider" ||
+                             provider_active == "ROCMExecutionProvider") &&
                             inference_successful && !engine.provider_fallback();
   std::filesystem::create_directories("artifacts");
   std::ofstream report{"artifacts/onnx-gpu-verification.json"};
@@ -157,6 +177,9 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
          << "  \"measured_runs\": " << measured_runs << ",\n"
          << "  \"successful_runs\": " << successful_runs << ",\n"
          << "  \"average_inference_ms\": " << average_ms << ",\n"
+         << "  \"average_preprocess_ms\": " << average_preprocess_ms << ",\n"
+         << "  \"average_onnx_run_ms\": " << average_onnx_run_ms << ",\n"
+         << "  \"average_postprocess_ms\": " << average_postprocess_ms << ",\n"
          << "  \"p95_inference_ms\": " << p95_ms << ",\n"
          << "  \"fallback\": "
          << (engine.provider_fallback() ? "true" : "false") << ",\n"
@@ -176,6 +199,9 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
             << "gpu_execution_verified=" << (gpu_verified ? "true" : "false")
             << '\n'
             << "average_inference_ms=" << average_ms << '\n'
+            << "average_preprocess_ms=" << average_preprocess_ms << '\n'
+            << "average_onnx_run_ms=" << average_onnx_run_ms << '\n'
+            << "average_postprocess_ms=" << average_postprocess_ms << '\n'
             << "p95_inference_ms=" << p95_ms << '\n'
             << "wrote artifacts/onnx-gpu-verification.json\n";
 }
@@ -280,6 +306,9 @@ public:
                 "segmentation_inference_backend");
     report_once(metadata, "segmentation_inference_device",
                 "segmentation_inference_device");
+    report_once(metadata, "onnx_preprocess_ms", "onnx_preprocess_ms");
+    report_once(metadata, "onnx_inference_ms", "onnx_inference_ms");
+    report_once(metadata, "onnx_postprocess_ms", "onnx_postprocess_ms");
     report_once(metadata, "background_processing_backend",
                 "background_processing_backend");
     report_once(metadata, "background_processing_device",

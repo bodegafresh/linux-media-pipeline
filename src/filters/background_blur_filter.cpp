@@ -557,9 +557,11 @@ BackgroundBlurFilter::BackgroundBlurFilter(
         "tracked_center");
   }
   if (requested_provider_ != "auto" && requested_provider_ != "cpu" &&
-      requested_provider_ != "migraphx" && requested_provider_ != "openvino") {
+      requested_provider_ != "migraphx" && requested_provider_ != "rocm" &&
+      requested_provider_ != "openvino") {
     throw std::invalid_argument(
-        "background_blur provider must be auto, cpu, migraphx, or openvino");
+        "background_blur provider must be auto, cpu, migraphx, rocm, or "
+        "openvino");
   }
   if (openvino_device_ != "CPU") {
     throw std::invalid_argument(
@@ -636,6 +638,12 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   }
   try {
     auto mask = onnx_engine_->segment_person(frame);
+    const auto timing = onnx_engine_->last_timing();
+    frame.metadata()["onnx_preprocess_ms"] =
+        std::to_string(timing.preprocess_ms);
+    frame.metadata()["onnx_inference_ms"] = std::to_string(timing.inference_ms);
+    frame.metadata()["onnx_postprocess_ms"] =
+        std::to_string(timing.postprocess_ms);
     mask = ai::refine_mask(mask, foreground_threshold_, mask_expand_,
                            mask_feather_);
     frame.metadata()["background_blur_mask"] = "onnx";

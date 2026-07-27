@@ -8,6 +8,7 @@
 #include <cmath>
 #include <filesystem>
 #include <future>
+#include <mutex>
 #include <numeric>
 #include <optional>
 #include <sstream>
@@ -173,6 +174,9 @@ std::string canonical_provider(std::string_view provider) {
   if (provider == "migraphx" || provider == "MIGraphXExecutionProvider") {
     return "MIGraphXExecutionProvider";
   }
+  if (provider == "rocm" || provider == "ROCMExecutionProvider") {
+    return "ROCMExecutionProvider";
+  }
   return std::string{provider};
 }
 
@@ -238,6 +242,18 @@ void append_migraphx_provider(Ort::SessionOptions &options) {
     throw std::runtime_error(
         "OrtSessionOptionsAppendExecutionProvider_MIGraphX symbol was not "
         "loaded");
+  }
+  auto *append_provider = reinterpret_cast<AppendProvider>(raw_symbol);
+  Ort::ThrowOnError(append_provider(options, 0));
+}
+
+void append_rocm_provider(Ort::SessionOptions &options) {
+  using AppendProvider = OrtStatus *(*)(OrtSessionOptions *, int);
+  auto *raw_symbol =
+      dlsym(RTLD_DEFAULT, "OrtSessionOptionsAppendExecutionProvider_ROCM");
+  if (raw_symbol == nullptr) {
+    throw std::runtime_error(
+        "OrtSessionOptionsAppendExecutionProvider_ROCM symbol was not loaded");
   }
   auto *append_provider = reinterpret_cast<AppendProvider>(raw_symbol);
   Ort::ThrowOnError(append_provider(options, 0));
@@ -380,6 +396,11 @@ public:
   [[nodiscard]] std::string_view openvino_device_active() const noexcept {
     return openvino_device_active_;
   }
+  [[nodiscard]] OnnxTimingStats last_timing() const noexcept {
+    const auto lock = std::scoped_lock{timing_mutex_};
+    static_cast<void>(lock);
+    return timing_;
+  }
 
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     if (!ready_ || !session_.has_value()) {
@@ -419,10 +440,19 @@ public:
     return fallback_segment_person(frame);
   }
 
+  [[nodiscard]] SegmentationMask
+  segment_person_blocking(const frame::Frame &frame) {
+    if (!ready_ || !session_.has_value()) {
+      return fallback_segment_person(frame);
+    }
+    return infer_mask(frame, std::nullopt);
+  }
+
 private:
   [[nodiscard]] SegmentationMask
   infer_mask(const frame::Frame &frame,
              const std::optional<SegmentationMask> &previous_mask) {
+    const auto total_started = std::chrono::steady_clock::now();
     const auto input_height =
         static_cast<std::uint32_t>(input_shape_[input_height_axis_]);
     const auto input_width =
@@ -470,8 +500,10 @@ private:
                                         input_shape_.data(), input_shape_rank_);
     const char *input_names[] = {input_name_.c_str()};
     const char *output_names[] = {output_name_.c_str()};
+    const auto preprocess_done = std::chrono::steady_clock::now();
     auto outputs = session_->Run(Ort::RunOptions{nullptr}, input_names, &tensor,
                                  1, output_names, 1);
+    const auto inference_done = std::chrono::steady_clock::now();
     if (outputs.empty() || !outputs.front().IsTensor()) {
       return fallback_segment_person(frame);
     }
@@ -577,7 +609,24 @@ private:
         previous_mask->height() == current.height()) {
       current = current.blend_with(*previous_mask, mask_smoothing_);
     }
+    const auto postprocess_done = std::chrono::steady_clock::now();
+    set_timing(
+        preprocess_done - total_started, inference_done - preprocess_done,
+        postprocess_done - inference_done, postprocess_done - total_started);
     return current;
+  }
+
+  void set_timing(std::chrono::steady_clock::duration preprocess,
+                  std::chrono::steady_clock::duration inference,
+                  std::chrono::steady_clock::duration postprocess,
+                  std::chrono::steady_clock::duration total) {
+    const auto lock = std::scoped_lock{timing_mutex_};
+    static_cast<void>(lock);
+    timing_ = OnnxTimingStats{
+        std::chrono::duration<double, std::milli>(preprocess).count(),
+        std::chrono::duration<double, std::milli>(inference).count(),
+        std::chrono::duration<double, std::milli>(postprocess).count(),
+        std::chrono::duration<double, std::milli>(total).count()};
   }
 
   void select_provider() {
@@ -631,6 +680,11 @@ private:
         active_provider_ = requested;
         return;
       }
+      if (requested == "ROCMExecutionProvider") {
+        append_rocm_provider(session_options_);
+        active_provider_ = requested;
+        return;
+      }
       provider_fallback_ = true;
       provider_fallback_reason_ = requested + " is not supported by lmp";
     } catch (const std::exception &error) {
@@ -673,6 +727,8 @@ private:
   std::string openvino_device_requested_ = "CPU";
   std::string openvino_device_active_ = "CPU";
   std::string last_error_;
+  mutable std::mutex timing_mutex_;
+  OnnxTimingStats timing_{};
 #else
   Impl(const std::string &, std::uint32_t, double, std::string, std::string,
        std::string, bool, std::string) {}
@@ -705,7 +761,12 @@ private:
   [[nodiscard]] std::string_view openvino_device_active() const noexcept {
     return "unavailable";
   }
+  [[nodiscard]] OnnxTimingStats last_timing() const noexcept { return {}; }
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
+    return fallback_segment_person(frame);
+  }
+  [[nodiscard]] SegmentationMask
+  segment_person_blocking(const frame::Frame &frame) {
     return fallback_segment_person(frame);
   }
 #endif
@@ -766,6 +827,11 @@ SegmentationMask OnnxRuntimeEngine::segment_person(const frame::Frame &frame) {
   return impl_->segment_person(frame);
 }
 
+SegmentationMask
+OnnxRuntimeEngine::segment_person_blocking(const frame::Frame &frame) {
+  return impl_->segment_person_blocking(frame);
+}
+
 std::string_view OnnxRuntimeEngine::model_path() const noexcept {
   return model_path_;
 }
@@ -813,6 +879,10 @@ std::string_view OnnxRuntimeEngine::openvino_device_active() const noexcept {
   return impl_ == nullptr ? "unavailable" : impl_->openvino_device_active();
 }
 
+OnnxTimingStats OnnxRuntimeEngine::last_timing() const noexcept {
+  return impl_ == nullptr ? OnnxTimingStats{} : impl_->last_timing();
+}
+
 std::string OnnxRuntimeEngine::runtime_version() {
 #if LMP_HAS_ONNXRUNTIME
   return OrtGetApiBase()->GetVersionString();
@@ -836,12 +906,15 @@ std::vector<OnnxProviderInfo> OnnxRuntimeEngine::provider_infos() {
     }
   };
   add_missing("MIGraphXExecutionProvider");
+  add_missing("ROCMExecutionProvider");
   add_missing("OpenVINOExecutionProvider");
   add_missing("CPUExecutionProvider");
 #else
   result.push_back(OnnxProviderInfo{"CPUExecutionProvider", false, false,
                                     "ONNX Runtime support is not compiled in"});
   result.push_back(OnnxProviderInfo{"MIGraphXExecutionProvider", false, false,
+                                    "ONNX Runtime support is not compiled in"});
+  result.push_back(OnnxProviderInfo{"ROCMExecutionProvider", false, false,
                                     "ONNX Runtime support is not compiled in"});
 #endif
   return result;

@@ -96,6 +96,10 @@ openvino_device: CPU
 radius: 5
 ```
 
+Provider values are `auto`, `cpu`, `migraphx`, `rocm`, and `openvino`.
+`rocm` is explicit for Fedora ONNX Runtime builds that expose
+`ROCMExecutionProvider` instead of `MIGraphXExecutionProvider`.
+
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.

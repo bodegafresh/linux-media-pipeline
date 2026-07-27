@@ -16,6 +16,13 @@ struct OnnxProviderInfo {
   std::string unavailable_reason;
 };
 
+struct OnnxTimingStats {
+  double preprocess_ms;
+  double inference_ms;
+  double postprocess_ms;
+  double total_ms;
+};
+
 class OnnxRuntimeEngine final : public IInferenceEngine {
 public:
   explicit OnnxRuntimeEngine(std::string model_path);
@@ -39,6 +46,8 @@ public:
   [[nodiscard]] bool available() const noexcept override;
   [[nodiscard]] SegmentationMask
   segment_person(const frame::Frame &frame) override;
+  [[nodiscard]] SegmentationMask
+  segment_person_blocking(const frame::Frame &frame);
   [[nodiscard]] std::string_view model_path() const noexcept;
   [[nodiscard]] std::string_view last_error() const noexcept;
   [[nodiscard]] std::string_view requested_provider() const noexcept;
@@ -50,6 +59,7 @@ public:
   [[nodiscard]] std::string_view openvino_available_devices() const noexcept;
   [[nodiscard]] std::string_view openvino_device_requested() const noexcept;
   [[nodiscard]] std::string_view openvino_device_active() const noexcept;
+  [[nodiscard]] OnnxTimingStats last_timing() const noexcept;
   [[nodiscard]] static std::string runtime_version();
   [[nodiscard]] static std::vector<OnnxProviderInfo> provider_infos();
 

@@ -201,12 +201,13 @@ check that the model file exists, that Fedora installed `onnxruntime` and
 `./scripts/stream.sh install-model` installs the preferred ONNX Runtime model
 and its external `.data` weights file when required.
 
-The `provider` value in the preset can be `auto`, `cpu`, `migraphx`, or
+The `provider` value in the preset can be `auto`, `cpu`, `migraphx`, `rocm`, or
 `openvino`. `auto` requests `MIGraphXExecutionProvider` only when the active
 ONNX Runtime build enumerates it; otherwise it keeps inference on
-`CPUExecutionProvider` while OpenCL handles the GPU blur. `openvino` is supported
-as an explicit CPU inference path on this AMD workstation and must not be treated
-as AMD GPU inference.
+`CPUExecutionProvider` while OpenCL handles the GPU blur. Fedora's ROCm package
+may expose `ROCMExecutionProvider` instead of MIGraphX; use `provider: rocm`
+explicitly for that path. `openvino` is supported as an explicit CPU inference
+path on this AMD workstation and must not be treated as AMD GPU inference.
 
 Inspect providers with:
 

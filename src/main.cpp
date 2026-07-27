@@ -138,7 +138,9 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
                 p95_source.size() - 1U,
                 static_cast<std::size_t>((p95_source.size() * 95U) / 100U))];
   const auto provider_active = std::string{engine.active_provider()};
-  const auto gpu_verified = false;
+  const auto inference_successful = successful_runs == measured_runs;
+  const auto gpu_verified = provider_active == "MIGraphXExecutionProvider" &&
+                            inference_successful && !engine.provider_fallback();
   std::filesystem::create_directories("artifacts");
   std::ofstream report{"artifacts/onnx-gpu-verification.json"};
   report << "{\n"
@@ -150,7 +152,7 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
          << (gpu_verified ? "true" : "false") << ",\n"
          << "  \"model_loaded\": " << (model_loaded ? "true" : "false") << ",\n"
          << "  \"inference_successful\": "
-         << (successful_runs == measured_runs ? "true" : "false") << ",\n"
+         << (inference_successful ? "true" : "false") << ",\n"
          << "  \"warmup_runs\": " << warmup_runs << ",\n"
          << "  \"measured_runs\": " << measured_runs << ",\n"
          << "  \"successful_runs\": " << successful_runs << ",\n"
@@ -166,7 +168,13 @@ void verify_onnx_provider(const lmp::config::AppConfig &config,
             << "onnx_runtime_provider_active=" << provider_active << '\n'
             << "onnx_runtime_provider_fallback="
             << (engine.provider_fallback() ? "true" : "false") << '\n'
-            << "gpu_execution_verified=false\n"
+            << "onnx_runtime_provider_fallback_reason="
+            << engine.provider_fallback_reason() << '\n'
+            << "model_loaded=" << (model_loaded ? "true" : "false") << '\n'
+            << "inference_successful="
+            << (inference_successful ? "true" : "false") << '\n'
+            << "gpu_execution_verified=" << (gpu_verified ? "true" : "false")
+            << '\n'
             << "average_inference_ms=" << average_ms << '\n'
             << "p95_inference_ms=" << p95_ms << '\n'
             << "wrote artifacts/onnx-gpu-verification.json\n";

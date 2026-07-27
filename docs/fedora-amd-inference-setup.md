@@ -26,3 +26,34 @@ Never use `--allowerasing` or `--skip-broken` for this work.
 
 The initial valid outcome may be that Fedora packages are present but the active
 ONNX Runtime build still enumerates only `CPUExecutionProvider`.
+
+## Approved Candidate Transaction
+
+The observed Fedora dry run proposed only installing:
+
+- `onnxruntime-rocm`
+- `onnxruntime-rocm-devel`
+- `migraphx`
+- `migraphx-devel`
+
+It proposed no removals. Disk impact was about 3 GiB installed.
+
+After reviewing `artifacts/dnf-migraphx-dry-run.txt`, the manual install command
+is:
+
+```bash
+sudo dnf install onnxruntime-rocm onnxruntime-rocm-devel migraphx migraphx-devel
+```
+
+Do not add `--allowerasing` or `--skip-broken`.
+
+Then rebuild and verify:
+
+```bash
+./scripts/build.sh
+./build/dev/lmp --list-onnx-providers
+./scripts/benchmark-onnx-providers.sh config/presets/ai-background-blur-migraphx.yaml
+```
+
+The provider list must show `MIGraphXExecutionProvider` before the live preset can
+use AMD GPU inference.

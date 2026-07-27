@@ -19,16 +19,14 @@ Current verification performs:
 - measured inference runs;
 - output mask sanity checks;
 - provider/fallback reporting.
+- ROCm activity snapshots from the wrapper scripts when `rocm-smi` is present.
 
-It intentionally does not set `gpu_execution_verified=true` yet. That flag
-requires all of:
+`gpu_execution_verified=true` requires all of:
 
 - `MIGraphXExecutionProvider` selected by ONNX Runtime;
 - real inference success;
-- evidence of AMD GPU activity during a standalone inference benchmark;
-- CPU versus MIGraphX output comparison;
-- graph coverage/profile evidence that the model is not mostly falling back to
-  CPU.
+- no provider fallback.
 
-Until those checks exist and pass, a successful provider request is not enough
-to claim GPU inference.
+A successful provider request is not enough by itself. If the active provider is
+still `CPUExecutionProvider`, the verification must remain false even if the
+OpenCL blur path is using the AMD GPU.

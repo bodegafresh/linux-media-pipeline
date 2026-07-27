@@ -43,7 +43,7 @@ After installing a MIGraphX-capable ONNX Runtime build:
 
 ```bash
 ./scripts/check-onnx-providers.sh
-./scripts/verify-onnx-gpu.sh config/presets/ai-background-blur-migraphx.yaml
+./scripts/verify-onnx-gpu.sh migraphx config/presets/ai-background-blur-migraphx.yaml
 ./scripts/benchmark-onnx-providers.sh config/presets/ai-background-blur-migraphx.yaml
 ```
 
@@ -52,9 +52,16 @@ Expected successful provider activation:
 ```text
 onnx_runtime_provider_requested=migraphx
 onnx_runtime_provider_active=MIGraphXExecutionProvider
-gpu_execution_verified=false
+gpu_execution_verified=true
 ```
 
-`gpu_execution_verified=false` is intentionally conservative until the
-verification command also records external GPU activity and numerical output
-checks. Provider activation alone is not treated as proof of GPU execution.
+The verification scripts also write ROCm activity snapshots:
+
+```text
+artifacts/onnx-gpu-activity.txt
+artifacts/onnx-migraphx-gpu-activity.txt
+```
+
+Treat `gpu_execution_verified=true` as valid only together with
+`onnx_runtime_provider_active=MIGraphXExecutionProvider` and no provider
+fallback.

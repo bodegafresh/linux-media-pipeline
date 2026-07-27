@@ -22,6 +22,8 @@ filters:
     max_zoom: 1.7
     mask_mode: onnx
     model_path: assets/models/person-segmentation.onnx
+    input_shape: 256x256x3
+    output_shape: 256x256x1
     inference_interval: 3
     mask_smoothing: 0.70
     fallback_mask_mode: tracked_center

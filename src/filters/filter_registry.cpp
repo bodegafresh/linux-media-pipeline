@@ -210,7 +210,9 @@ FilterRegistry create_default_registry() {
             detail::coordinate_parameter(config, "inference_interval", 3U),
             detail::double_parameter(config, "mask_smoothing", 0.70),
             detail::string_parameter(config, "fallback_mask_mode",
-                                     "tracked_center"));
+                                     "tracked_center"),
+            detail::string_parameter(config, "input_shape", ""),
+            detail::string_parameter(config, "output_shape", ""));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

@@ -420,7 +420,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                            brightness, contrast, saturation, false, 1.0, 1.0,
                            "luminance", 0.28, 0.42,
                            "assets/models/person-segmentation.onnx", 3U, 0.70,
-                           "tracked_center") {}
+                           "tracked_center", "", "") {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -428,7 +428,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     bool auto_frame, double target_fill, double max_zoom, std::string mask_mode,
     double mask_width, double mask_height, std::string model_path,
     std::uint32_t inference_interval, double mask_smoothing,
-    std::string fallback_mask_mode)
+    std::string fallback_mask_mode, std::string input_shape,
+    std::string output_shape)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -437,7 +438,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       mask_height_(mask_height), model_path_(std::move(model_path)),
       inference_interval_(inference_interval), mask_smoothing_(mask_smoothing),
       fallback_mask_mode_(std::move(fallback_mask_mode)),
-      onnx_error_reported_(false) {
+      input_shape_(std::move(input_shape)),
+      output_shape_(std::move(output_shape)), onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -487,7 +489,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   if (onnx_engine_ == nullptr) {
     try {
       onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
-          model_path_, inference_interval_, mask_smoothing_);
+          model_path_, inference_interval_, mask_smoothing_, input_shape_,
+          output_shape_);
     } catch (const std::exception &error) {
       frame.metadata()["background_blur_mask"] =
           "onnx_init_error_" + fallback_mask_mode_;

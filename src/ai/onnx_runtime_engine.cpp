@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <numeric>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -136,6 +137,27 @@ std::vector<std::size_t> spatial_axes(const TensorShape &shape,
   }
   return axes;
 }
+
+std::optional<TensorShape> parse_shape_override(const std::string &value) {
+  if (value.empty()) {
+    return std::nullopt;
+  }
+  auto shape = TensorShape{};
+  std::istringstream input{value};
+  std::string token;
+  while (std::getline(input, token, 'x')) {
+    if (shape.rank >= shape.dimensions.size()) {
+      return std::nullopt;
+    }
+    const auto dimension = std::stoll(token);
+    shape.dimensions[shape.rank] = dimension_or(dimension, 0);
+    if (shape.dimensions[shape.rank] <= 0) {
+      return std::nullopt;
+    }
+    ++shape.rank;
+  }
+  return shape.rank > 0U ? std::optional<TensorShape>{shape} : std::nullopt;
+}
 #endif
 
 } // namespace
@@ -144,9 +166,10 @@ class OnnxRuntimeEngine::Impl {
 public:
 #if LMP_HAS_ONNXRUNTIME
   Impl(const std::string &model_path, std::uint32_t inference_interval,
-       double mask_smoothing)
+       double mask_smoothing, std::string input_shape, std::string output_shape)
       : env_(ORT_LOGGING_LEVEL_WARNING, "linux-media-pipeline"),
-        session_options_{}, allocator_{}, input_shape_{1, 3, 256, 256} {
+        session_options_{}, allocator_{}, input_shape_{1, 3, 256, 256},
+        output_shape_(std::move(output_shape)) {
     inference_interval_ = std::max<std::uint32_t>(1U, inference_interval);
     mask_smoothing_ = std::clamp(mask_smoothing, 0.0, 0.95);
     try {
@@ -167,10 +190,14 @@ public:
 
       const auto input_info =
           session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-      const auto maybe_shape = read_shape(input_info);
+      auto maybe_shape = read_shape(input_info);
       if (!maybe_shape.has_value()) {
-        last_error_ = "model input shape is unreadable";
-        return;
+        maybe_shape = parse_shape_override(input_shape);
+        if (!maybe_shape.has_value()) {
+          last_error_ = "model input shape is unreadable";
+          return;
+        }
+        input_shape_overridden_ = true;
       }
       const auto shape = *maybe_shape;
       const auto channel = channel_axis(shape);
@@ -282,7 +309,10 @@ public:
     }
 
     const auto output_info = outputs.front().GetTensorTypeAndShapeInfo();
-    const auto output_shape = read_shape(output_info);
+    auto output_shape = read_shape(output_info);
+    if (!output_shape.has_value()) {
+      output_shape = parse_shape_override(output_shape_);
+    }
     const auto *output = outputs.front().GetTensorData<float>();
     const auto output_count = output_info.GetElementCount();
     if (output == nullptr || output_count == 0U) {
@@ -396,6 +426,7 @@ private:
   std::string input_name_;
   std::string output_name_;
   std::array<std::int64_t, 8> input_shape_;
+  std::string output_shape_;
   std::size_t input_shape_rank_ = 4U;
   std::size_t input_height_axis_ = 2U;
   std::size_t input_width_axis_ = 3U;
@@ -405,9 +436,10 @@ private:
   std::uint32_t inference_interval_ = 3;
   double mask_smoothing_ = 0.70;
   bool ready_ = false;
+  bool input_shape_overridden_ = false;
   std::string last_error_;
 #else
-  Impl(const std::string &, std::uint32_t, double) {}
+  Impl(const std::string &, std::uint32_t, double, std::string, std::string) {}
   [[nodiscard]] bool ready() const noexcept { return false; }
   [[nodiscard]] std::string_view last_error() const noexcept {
     return "ONNX Runtime support is not compiled in";
@@ -420,14 +452,24 @@ private:
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path)
     : model_path_(std::move(model_path)),
-      impl_(std::make_unique<Impl>(model_path_, 3U, 0.70)) {}
+      impl_(std::make_unique<Impl>(model_path_, 3U, 0.70, "", "")) {}
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
                                      std::uint32_t inference_interval,
                                      double mask_smoothing)
     : model_path_(std::move(model_path)),
       impl_(std::make_unique<Impl>(model_path_, inference_interval,
-                                   mask_smoothing)) {}
+                                   mask_smoothing, "", "")) {}
+
+OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
+                                     std::uint32_t inference_interval,
+                                     double mask_smoothing,
+                                     std::string input_shape,
+                                     std::string output_shape)
+    : model_path_(std::move(model_path)),
+      impl_(std::make_unique<Impl>(model_path_, inference_interval,
+                                   mask_smoothing, std::move(input_shape),
+                                   std::move(output_shape))) {}
 
 OnnxRuntimeEngine::~OnnxRuntimeEngine() = default;
 

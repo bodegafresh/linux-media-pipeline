@@ -25,7 +25,8 @@ public:
                        double max_zoom, std::string mask_mode,
                        double mask_width, double mask_height,
                        std::string model_path, std::uint32_t inference_interval,
-                       double mask_smoothing, std::string fallback_mask_mode);
+                       double mask_smoothing, std::string fallback_mask_mode,
+                       std::string input_shape, std::string output_shape);
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -52,6 +53,8 @@ private:
   std::uint32_t inference_interval_;
   double mask_smoothing_;
   std::string fallback_mask_mode_;
+  std::string input_shape_;
+  std::string output_shape_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable bool onnx_error_reported_;
 };

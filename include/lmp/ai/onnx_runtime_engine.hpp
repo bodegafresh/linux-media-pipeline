@@ -13,6 +13,9 @@ public:
   explicit OnnxRuntimeEngine(std::string model_path);
   OnnxRuntimeEngine(std::string model_path, std::uint32_t inference_interval,
                     double mask_smoothing);
+  OnnxRuntimeEngine(std::string model_path, std::uint32_t inference_interval,
+                    double mask_smoothing, std::string input_shape,
+                    std::string output_shape);
   ~OnnxRuntimeEngine() override;
 
   OnnxRuntimeEngine(const OnnxRuntimeEngine &) = delete;

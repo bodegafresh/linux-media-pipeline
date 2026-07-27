@@ -314,6 +314,8 @@ public:
                 "segmentation_mask_largest_component");
     report_once(metadata, "segmentation_mask_coverage_component",
                 "segmentation_mask_coverage_component");
+    report_once(metadata, "segmentation_mask_rejected",
+                "segmentation_mask_rejected");
     report_once(metadata, "segmentation_mask_coverage_refined",
                 "segmentation_mask_coverage_refined");
     report_once(metadata, "onnx_preprocess_ms", "onnx_preprocess_ms");

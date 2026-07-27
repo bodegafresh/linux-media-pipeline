@@ -33,6 +33,8 @@ filters:
     mask_feather: 3
     invert_mask: true
     keep_largest_component: true
+    min_mask_coverage: 0.08
+    max_mask_coverage: 0.80
     fallback_mask_mode: tracked_center
     mask_width: 0.34
     mask_height: 0.54

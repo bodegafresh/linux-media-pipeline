@@ -499,7 +499,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
           radius, foreground_threshold, std::move(backend), brightness,
           contrast, saturation, false, 1.0, 1.0, "luminance", 0.28, 0.42,
           "assets/models/person-segmentation.onnx", 3U, 0.70, "tracked_center",
-          "", "", "auto", true, "CPU", 1U, 3U, false, false) {}
+          "", "", "auto", true, "CPU", 1U, 3U, false, false, 0.02, 0.85) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -511,7 +511,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     std::string output_shape, std::string requested_provider,
     bool allow_provider_fallback, std::string openvino_device,
     std::uint32_t mask_expand, std::uint32_t mask_feather, bool invert_mask,
-    bool keep_largest_component)
+    bool keep_largest_component, double min_mask_coverage,
+    double max_mask_coverage)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -527,7 +528,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       openvino_device_(std::move(openvino_device)), mask_expand_(mask_expand),
       mask_feather_(mask_feather), invert_mask_(invert_mask),
       keep_largest_component_(keep_largest_component),
-      onnx_error_reported_(false) {
+      min_mask_coverage_(min_mask_coverage),
+      max_mask_coverage_(max_mask_coverage), onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -547,6 +549,12 @@ BackgroundBlurFilter::BackgroundBlurFilter(
   }
   if (max_zoom_ < 1.0) {
     throw std::invalid_argument("background_blur max_zoom must be >= 1");
+  }
+  if (min_mask_coverage_ < 0.0 || min_mask_coverage_ > 1.0 ||
+      max_mask_coverage_ < 0.0 || max_mask_coverage_ > 1.0 ||
+      min_mask_coverage_ > max_mask_coverage_) {
+    throw std::invalid_argument("background_blur mask coverage bounds must be "
+                                "ordered values in [0, 1]");
   }
   if (mask_mode_ != "luminance" && mask_mode_ != "center" &&
       mask_mode_ != "onnx") {
@@ -663,6 +671,15 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
           std::to_string(ai::mask_coverage(mask, foreground_threshold_));
     } else {
       frame.metadata()["segmentation_mask_largest_component"] = "false";
+    }
+    const auto usable_coverage = ai::mask_coverage(mask, foreground_threshold_);
+    if (usable_coverage < min_mask_coverage_ ||
+        usable_coverage > max_mask_coverage_) {
+      frame.metadata()["background_blur_mask"] =
+          "onnx_rejected_" + fallback_mask_mode_;
+      frame.metadata()["segmentation_mask_rejected"] =
+          "coverage:" + std::to_string(usable_coverage);
+      return std::nullopt;
     }
     const auto timing = onnx_engine_->last_timing();
     frame.metadata()["onnx_preprocess_ms"] =
@@ -833,11 +850,13 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto saturation = static_cast<float>(saturation_);
   auto crop = Crop{0U, 0U, frame.width(), frame.height()};
   if (auto_frame_) {
-    auto bounds =
-        mask.has_value()
-            ? mask_bounds(*mask, foreground_threshold_)
-            : foreground_bounds(bytes, frame.format(), strides, frame.width(),
-                                frame.height(), foreground_threshold_);
+    auto bounds = std::optional<Bounds>{};
+    if (mask.has_value()) {
+      bounds = mask_bounds(*mask, foreground_threshold_);
+    } else if (active_mask_mode != "tracked_center") {
+      bounds = foreground_bounds(bytes, frame.format(), strides, frame.width(),
+                                 frame.height(), foreground_threshold_);
+    }
     if (bounds.has_value()) {
       if (mask.has_value()) {
         bounds = scale_bounds(*bounds, mask->width(), mask->height(),

@@ -128,6 +128,17 @@ keep_largest_component: true
 
 The diagnostics then include `segmentation_mask_coverage_component`.
 
+Coverage guardrails reject obviously bad masks:
+
+```yaml
+min_mask_coverage: 0.08
+max_mask_coverage: 0.80
+```
+
+When rejected, the stream prints `segmentation_mask_rejected=...` and falls back
+to the configured stable mask mode instead of using a noisy mask for blur or
+auto-framing.
+
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.

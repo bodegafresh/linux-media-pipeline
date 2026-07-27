@@ -388,6 +388,15 @@ int main() {
   ok = expect(onnx.name() == "onnxruntime", "onnx engine name") && ok;
   ok =
       expect(!onnx.available(), "onnx engine availability without model") && ok;
+  ok = expect(!onnx.available_providers().empty(),
+              "onnx provider list is reportable") &&
+       ok;
+  ok = expect(!onnx.requested_provider().empty(),
+              "onnx requested provider is reportable") &&
+       ok;
+  ok = expect(!onnx.active_provider().empty(),
+              "onnx active provider is reportable") &&
+       ok;
   ok =
       expect(inferred_mask.at(0U, 0U) == 0U && inferred_mask.at(1U, 0U) == 255U,
              "onnx fallback segmentation") &&

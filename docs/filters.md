@@ -63,12 +63,17 @@ For the AI preset it also reports the mask source:
 
 ```text
 background_blur_mask_active=onnx
+onnx_runtime_provider_requested=auto
+onnx_runtime_provider_active=CPUExecutionProvider
+onnx_runtime_provider_fallback=false
 ```
 
 That line means `background_blur` is using the real
 `assets/models/person-segmentation.onnx` model through ONNX Runtime. If it says
 `onnx_unavailable_center` or `center`, the stream is still usable, but it is
 using the fixed fallback mask instead of true person segmentation.
+The provider lines show what ONNX Runtime actually selected. A fallback of
+`true` means the requested provider was not used.
 
 The AI blur preset exposes the main performance knobs:
 
@@ -76,6 +81,8 @@ The AI blur preset exposes the main performance knobs:
 inference_interval: 3
 mask_smoothing: 0.70
 fallback_mask_mode: tracked_center
+provider: auto
+allow_provider_fallback: true
 radius: 8
 ```
 

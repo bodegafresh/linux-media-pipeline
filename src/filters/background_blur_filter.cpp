@@ -420,7 +420,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                            brightness, contrast, saturation, false, 1.0, 1.0,
                            "luminance", 0.28, 0.42,
                            "assets/models/person-segmentation.onnx", 3U, 0.70,
-                           "tracked_center", "", "") {}
+                           "tracked_center", "", "", "auto", true) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -429,7 +429,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     double mask_width, double mask_height, std::string model_path,
     std::uint32_t inference_interval, double mask_smoothing,
     std::string fallback_mask_mode, std::string input_shape,
-    std::string output_shape)
+    std::string output_shape, std::string requested_provider,
+    bool allow_provider_fallback)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -439,7 +440,10 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       inference_interval_(inference_interval), mask_smoothing_(mask_smoothing),
       fallback_mask_mode_(std::move(fallback_mask_mode)),
       input_shape_(std::move(input_shape)),
-      output_shape_(std::move(output_shape)), onnx_error_reported_(false) {
+      output_shape_(std::move(output_shape)),
+      requested_provider_(std::move(requested_provider)),
+      allow_provider_fallback_(allow_provider_fallback),
+      onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -490,7 +494,7 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     try {
       onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
           model_path_, inference_interval_, mask_smoothing_, input_shape_,
-          output_shape_);
+          output_shape_, requested_provider_, allow_provider_fallback_);
     } catch (const std::exception &error) {
       frame.metadata()["background_blur_mask"] =
           "onnx_init_error_" + fallback_mask_mode_;
@@ -502,6 +506,16 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
       return std::nullopt;
     }
   }
+  frame.metadata()["onnx_runtime_available_providers"] =
+      std::string{onnx_engine_->available_providers()};
+  frame.metadata()["onnx_runtime_provider_requested"] =
+      std::string{onnx_engine_->requested_provider()};
+  frame.metadata()["onnx_runtime_provider_active"] =
+      std::string{onnx_engine_->active_provider()};
+  frame.metadata()["onnx_runtime_provider_fallback"] =
+      onnx_engine_->provider_fallback() ? "true" : "false";
+  frame.metadata()["onnx_runtime_provider_fallback_reason"] =
+      std::string{onnx_engine_->provider_fallback_reason()};
   if (!onnx_engine_->available()) {
     frame.metadata()["background_blur_mask"] =
         "onnx_unavailable_" + fallback_mask_mode_;

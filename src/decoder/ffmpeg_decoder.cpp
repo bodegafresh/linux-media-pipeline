@@ -56,7 +56,7 @@ std::string ffmpeg_error(int code) {
 int ffmpeg_log_level_from_env() {
   const auto *configured = std::getenv("LMP_FFMPEG_LOG_LEVEL");
   if (configured == nullptr) {
-    return AV_LOG_ERROR;
+    return AV_LOG_FATAL;
   }
   const auto level = std::string_view{configured};
   if (level == "quiet") {

@@ -106,6 +106,44 @@ private:
       std::chrono::steady_clock::duration::zero();
 };
 
+class RuntimeMetadataReporter {
+public:
+  void report(const lmp::frame::Frame::Metadata &metadata) {
+    report_once(metadata, "filter_backend", "filter_backend_active");
+    report_once(metadata, "background_blur_backend",
+                "background_blur_backend_active");
+    report_once(metadata, "background_blur_mask",
+                "background_blur_mask_active");
+    report_once(metadata, "onnx_runtime_available_providers",
+                "onnx_runtime_available_providers");
+    report_once(metadata, "onnx_runtime_provider_requested",
+                "onnx_runtime_provider_requested");
+    report_once(metadata, "onnx_runtime_provider_active",
+                "onnx_runtime_provider_active");
+    report_once(metadata, "onnx_runtime_provider_fallback",
+                "onnx_runtime_provider_fallback");
+    report_once(metadata, "onnx_runtime_provider_fallback_reason",
+                "onnx_runtime_provider_fallback_reason");
+  }
+
+private:
+  void report_once(const lmp::frame::Frame::Metadata &metadata,
+                   std::string_view key, std::string_view label) {
+    if (reported_.end() !=
+        std::find(reported_.begin(), reported_.end(), std::string{key})) {
+      return;
+    }
+    const auto found = metadata.find(std::string{key});
+    if (found == metadata.end() || found->second.empty()) {
+      return;
+    }
+    std::cout << label << '=' << found->second << '\n';
+    reported_.push_back(std::string{key});
+  }
+
+  std::vector<std::string> reported_;
+};
+
 std::string
 active_filter_list(const std::vector<lmp::config::FilterConfig> &filters) {
   std::string result = "[";
@@ -296,38 +334,13 @@ int main(int argc, char **argv) {
                 << " filters=" << pipeline.size()
                 << " filters_active=" << filters_active << " pipeline_plan=\""
                 << plan << "\"\n";
-      bool reported_filter_backend = false;
-      bool reported_background_blur_backend = false;
-      bool reported_background_blur_mask = false;
+      RuntimeMetadataReporter runtime_metadata;
       StatsReporter stats{stats_every};
       while (true) {
         const auto frame_started = std::chrono::steady_clock::now();
         auto frame = decoder.read_frame();
         pipeline.process(frame);
-        if (!reported_filter_backend) {
-          if (const auto found = frame.metadata().find("filter_backend");
-              found != frame.metadata().end()) {
-            std::cout << "filter_backend_active=" << found->second << '\n';
-            reported_filter_backend = true;
-          }
-        }
-        if (!reported_background_blur_backend) {
-          if (const auto found =
-                  frame.metadata().find("background_blur_backend");
-              found != frame.metadata().end()) {
-            std::cout << "background_blur_backend_active=" << found->second
-                      << '\n';
-            reported_background_blur_backend = true;
-          }
-        }
-        if (!reported_background_blur_mask) {
-          if (const auto found = frame.metadata().find("background_blur_mask");
-              found != frame.metadata().end()) {
-            std::cout << "background_blur_mask_active=" << found->second
-                      << '\n';
-            reported_background_blur_mask = true;
-          }
-        }
+        runtime_metadata.report(frame.metadata());
         output.write(frame);
         stats.observe(std::chrono::steady_clock::now() - frame_started);
       }
@@ -350,38 +363,13 @@ int main(int argc, char **argv) {
                 << " filters=" << pipeline.size()
                 << " filters_active=" << filters_active << " pipeline_plan=\""
                 << plan << "\"\n";
-      bool reported_filter_backend = false;
-      bool reported_background_blur_backend = false;
-      bool reported_background_blur_mask = false;
+      RuntimeMetadataReporter runtime_metadata;
       StatsReporter stats{stats_every};
       for (std::uint32_t frame_index = 0;; ++frame_index) {
         const auto frame_started = std::chrono::steady_clock::now();
         auto frame = make_test_pattern(width, height, frame_index);
         pipeline.process(frame);
-        if (!reported_filter_backend) {
-          if (const auto found = frame.metadata().find("filter_backend");
-              found != frame.metadata().end()) {
-            std::cout << "filter_backend_active=" << found->second << '\n';
-            reported_filter_backend = true;
-          }
-        }
-        if (!reported_background_blur_backend) {
-          if (const auto found =
-                  frame.metadata().find("background_blur_backend");
-              found != frame.metadata().end()) {
-            std::cout << "background_blur_backend_active=" << found->second
-                      << '\n';
-            reported_background_blur_backend = true;
-          }
-        }
-        if (!reported_background_blur_mask) {
-          if (const auto found = frame.metadata().find("background_blur_mask");
-              found != frame.metadata().end()) {
-            std::cout << "background_blur_mask_active=" << found->second
-                      << '\n';
-            reported_background_blur_mask = true;
-          }
-        }
+        runtime_metadata.report(frame.metadata());
         output.write(frame);
         stats.observe(std::chrono::steady_clock::now() - frame_started);
         std::this_thread::sleep_for(std::chrono::milliseconds{1000 / fps});

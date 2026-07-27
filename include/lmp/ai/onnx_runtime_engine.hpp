@@ -16,6 +16,10 @@ public:
   OnnxRuntimeEngine(std::string model_path, std::uint32_t inference_interval,
                     double mask_smoothing, std::string input_shape,
                     std::string output_shape);
+  OnnxRuntimeEngine(std::string model_path, std::uint32_t inference_interval,
+                    double mask_smoothing, std::string input_shape,
+                    std::string output_shape, std::string requested_provider,
+                    bool allow_provider_fallback);
   ~OnnxRuntimeEngine() override;
 
   OnnxRuntimeEngine(const OnnxRuntimeEngine &) = delete;
@@ -29,6 +33,11 @@ public:
   segment_person(const frame::Frame &frame) override;
   [[nodiscard]] std::string_view model_path() const noexcept;
   [[nodiscard]] std::string_view last_error() const noexcept;
+  [[nodiscard]] std::string_view requested_provider() const noexcept;
+  [[nodiscard]] std::string_view active_provider() const noexcept;
+  [[nodiscard]] std::string_view available_providers() const noexcept;
+  [[nodiscard]] bool provider_fallback() const noexcept;
+  [[nodiscard]] std::string_view provider_fallback_reason() const noexcept;
 
 private:
   class Impl;

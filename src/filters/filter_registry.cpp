@@ -212,7 +212,9 @@ FilterRegistry create_default_registry() {
             detail::string_parameter(config, "fallback_mask_mode",
                                      "tracked_center"),
             detail::string_parameter(config, "input_shape", ""),
-            detail::string_parameter(config, "output_shape", ""));
+            detail::string_parameter(config, "output_shape", ""),
+            detail::string_parameter(config, "provider", "auto"),
+            detail::bool_parameter(config, "allow_provider_fallback", true));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

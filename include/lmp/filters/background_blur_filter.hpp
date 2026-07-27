@@ -26,7 +26,9 @@ public:
                        double mask_width, double mask_height,
                        std::string model_path, std::uint32_t inference_interval,
                        double mask_smoothing, std::string fallback_mask_mode,
-                       std::string input_shape, std::string output_shape);
+                       std::string input_shape, std::string output_shape,
+                       std::string requested_provider,
+                       bool allow_provider_fallback);
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -55,6 +57,8 @@ private:
   std::string fallback_mask_mode_;
   std::string input_shape_;
   std::string output_shape_;
+  std::string requested_provider_;
+  bool allow_provider_fallback_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable bool onnx_error_reported_;
 };

@@ -6,6 +6,7 @@ usage() {
 Usage:
   ./scripts/stream.sh test-pattern [output_device] [config] [lmp_args...]
   ./scripts/stream.sh gopro-udp [output_device] [config] [lmp_args...]
+  ./scripts/stream.sh doctor [output_device] [config]
   ./scripts/stream.sh install-model
   ./scripts/stream.sh usb [input_device] [output_device] [width] [height] [fps]
 
@@ -14,6 +15,7 @@ Examples:
   ./scripts/stream.sh gopro-udp
   ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
   ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml --stats-every 5
+  ./scripts/stream.sh doctor /dev/video20 config/presets/ai-background-blur.yaml
   ./scripts/stream.sh install-model
   ./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
 EOF
@@ -42,6 +44,39 @@ fi
 shift
 
 case "${mode}" in
+  doctor)
+    output_device="${1:-/dev/video20}"
+    config="${2:-config/presets/ai-background-blur.yaml}"
+    model_path="assets/models/person-segmentation.onnx"
+    data_path="assets/models/mediapipe_selfie.data"
+
+    echo "linux-media-pipeline doctor"
+    if [[ -e "${output_device}" ]]; then
+      echo "OK: output device exists: ${output_device}"
+    else
+      echo "WARN: output device is missing: ${output_device}"
+      echo "      Run: ./scripts/setup-loopback.sh ${output_device#/dev/video} linux-media-pipeline"
+    fi
+
+    if [[ -s "${model_path}" ]]; then
+      echo "OK: ONNX model exists: ${model_path}"
+    else
+      echo "WARN: ONNX model is missing: ${model_path}"
+      echo "      Run: ./scripts/stream.sh install-model"
+    fi
+
+    if [[ -s "${data_path}" ]]; then
+      echo "OK: external ONNX weights exist: ${data_path}"
+    else
+      echo "INFO: external ONNX weights file not found; this is OK for single-file models."
+    fi
+
+    ./scripts/build.sh
+    if [[ -e "${output_device}" ]]; then
+      ./build/dev/lmp --config "${config}" --check-output
+    fi
+    ;;
+
   install-model)
     model_dir="assets/models"
     model_path="${model_dir}/person-segmentation.onnx"

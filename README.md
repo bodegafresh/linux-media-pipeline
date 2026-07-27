@@ -28,9 +28,11 @@ Meet, Zoom, Chrome, or any other app that can read `/dev/video*`.
 
 ```bash
 ./scripts/install-fedora-deps.sh
+./scripts/stream.sh install-model
 ./scripts/build.sh
 ./scripts/test.sh
 ./scripts/setup-loopback.sh 20 linux-media-pipeline
+./scripts/stream.sh doctor /dev/video20 config/presets/ai-background-blur.yaml
 ```
 
 Validate the virtual camera with a generated pattern:
@@ -112,6 +114,7 @@ replaced by an in-process `UsbCameraSource` without changing the V4L2 consumer.
 ./build/dev/lmp --check-output
 ./build/dev/lmp --stream-live
 ./build/dev/lmp --test-pattern
+./scripts/stream.sh doctor /dev/video20 config/presets/ai-background-blur.yaml
 ```
 
 ## Configuration
@@ -173,6 +176,10 @@ The terminal should show:
 LMP_HAS_ONNXRUNTIME=ON
 background_blur_backend_active=opencl
 background_blur_mask_active=onnx
+onnx_runtime_available_providers=[CPUExecutionProvider]
+onnx_runtime_provider_requested=auto
+onnx_runtime_provider_active=CPUExecutionProvider
+onnx_runtime_provider_fallback=false
 ```
 
 If it prints `background_blur_mask_active=onnx_unavailable_center`,
@@ -187,11 +194,17 @@ check that the model file exists, that Fedora installed `onnxruntime` and
 `./scripts/stream.sh install-model` installs the preferred ONNX Runtime model
 and its external `.data` weights file when required.
 
-FFmpeg warnings are hidden by default so the runtime status lines stay readable.
+The `provider` value in the preset can be `auto`, `cpu`, `rocm`, `migraphx`, or
+`openvino`. The project now reports what ONNX Runtime providers are available
+and which one is active. If `onnx_runtime_provider_fallback=true`, inference is
+not running on the requested provider.
+
+FFmpeg recoverable startup logs are hidden by default so the runtime status lines
+stay readable.
 To temporarily restore FFmpeg diagnostics:
 
 ```bash
-LMP_FFMPEG_LOG_LEVEL=warning ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+LMP_FFMPEG_LOG_LEVEL=error ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ```
 
 For live tuning, enable periodic runtime stats:

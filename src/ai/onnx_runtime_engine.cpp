@@ -158,6 +158,45 @@ std::optional<TensorShape> parse_shape_override(const std::string &value) {
   }
   return shape.rank > 0U ? std::optional<TensorShape>{shape} : std::nullopt;
 }
+
+std::string canonical_provider(std::string_view provider) {
+  if (provider == "cpu" || provider == "CPUExecutionProvider") {
+    return "CPUExecutionProvider";
+  }
+  if (provider == "rocm" || provider == "ROCmExecutionProvider" ||
+      provider == "ROCMExecutionProvider") {
+    return "ROCMExecutionProvider";
+  }
+  if (provider == "migraphx" || provider == "MIGraphXExecutionProvider") {
+    return "MIGraphXExecutionProvider";
+  }
+  if (provider == "openvino" || provider == "OpenVINOExecutionProvider") {
+    return "OpenVINOExecutionProvider";
+  }
+  return std::string{provider};
+}
+
+std::string join_available_providers() {
+  try {
+    const auto providers = Ort::GetAvailableProviders();
+    std::string result = "[";
+    for (std::size_t index = 0; index < providers.size(); ++index) {
+      if (index > 0U) {
+        result += ",";
+      }
+      result += providers[index];
+    }
+    result += "]";
+    return result;
+  } catch (const std::exception &error) {
+    return std::string{"unavailable:"} + error.what();
+  }
+}
+
+bool provider_list_contains(const std::string &providers,
+                            const std::string &provider) {
+  return providers.find(provider) != std::string::npos;
+}
 #endif
 
 } // namespace
@@ -166,13 +205,21 @@ class OnnxRuntimeEngine::Impl {
 public:
 #if LMP_HAS_ONNXRUNTIME
   Impl(const std::string &model_path, std::uint32_t inference_interval,
-       double mask_smoothing, std::string input_shape, std::string output_shape)
+       double mask_smoothing, std::string input_shape, std::string output_shape,
+       std::string requested_provider, bool allow_provider_fallback)
       : env_(ORT_LOGGING_LEVEL_WARNING, "linux-media-pipeline"),
         session_options_{}, allocator_{}, input_shape_{1, 3, 256, 256},
-        output_shape_(std::move(output_shape)) {
+        output_shape_(std::move(output_shape)),
+        requested_provider_(std::move(requested_provider)),
+        allow_provider_fallback_(allow_provider_fallback) {
     inference_interval_ = std::max<std::uint32_t>(1U, inference_interval);
     mask_smoothing_ = std::clamp(mask_smoothing, 0.0, 0.95);
     try {
+      available_providers_ = join_available_providers();
+      select_provider();
+      if (!last_error_.empty() && !allow_provider_fallback_) {
+        return;
+      }
       if (!std::filesystem::exists(model_path)) {
         last_error_ = "model file does not exist";
         return;
@@ -241,6 +288,21 @@ public:
   [[nodiscard]] bool ready() const noexcept { return ready_; }
   [[nodiscard]] std::string_view last_error() const noexcept {
     return last_error_;
+  }
+  [[nodiscard]] std::string_view requested_provider() const noexcept {
+    return requested_provider_;
+  }
+  [[nodiscard]] std::string_view active_provider() const noexcept {
+    return active_provider_;
+  }
+  [[nodiscard]] std::string_view available_providers() const noexcept {
+    return available_providers_;
+  }
+  [[nodiscard]] bool provider_fallback() const noexcept {
+    return provider_fallback_;
+  }
+  [[nodiscard]] std::string_view provider_fallback_reason() const noexcept {
+    return provider_fallback_reason_;
   }
 
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
@@ -419,6 +481,37 @@ public:
   }
 
 private:
+  void select_provider() {
+    if (requested_provider_.empty()) {
+      requested_provider_ = "auto";
+    }
+    active_provider_ = "CPUExecutionProvider";
+    provider_fallback_ = false;
+    provider_fallback_reason_.clear();
+
+    if (requested_provider_ == "auto" || requested_provider_ == "cpu") {
+      return;
+    }
+
+    const auto requested = canonical_provider(requested_provider_);
+    if (!provider_list_contains(available_providers_, requested)) {
+      provider_fallback_ = true;
+      provider_fallback_reason_ = requested + " unavailable";
+      if (!allow_provider_fallback_) {
+        last_error_ = provider_fallback_reason_;
+      }
+      return;
+    }
+
+    provider_fallback_ = true;
+    provider_fallback_reason_ =
+        requested + " available but explicit provider activation is not "
+                    "implemented; using CPUExecutionProvider";
+    if (!allow_provider_fallback_) {
+      last_error_ = provider_fallback_reason_;
+    }
+  }
+
   Ort::Env env_;
   Ort::SessionOptions session_options_;
   Ort::AllocatorWithDefaultOptions allocator_;
@@ -437,11 +530,31 @@ private:
   double mask_smoothing_ = 0.70;
   bool ready_ = false;
   bool input_shape_overridden_ = false;
+  bool allow_provider_fallback_ = true;
+  bool provider_fallback_ = false;
+  std::string requested_provider_ = "auto";
+  std::string active_provider_ = "CPUExecutionProvider";
+  std::string available_providers_ = "[]";
+  std::string provider_fallback_reason_;
   std::string last_error_;
 #else
-  Impl(const std::string &, std::uint32_t, double, std::string, std::string) {}
+  Impl(const std::string &, std::uint32_t, double, std::string, std::string,
+       std::string, bool) {}
   [[nodiscard]] bool ready() const noexcept { return false; }
   [[nodiscard]] std::string_view last_error() const noexcept {
+    return "ONNX Runtime support is not compiled in";
+  }
+  [[nodiscard]] std::string_view requested_provider() const noexcept {
+    return "unavailable";
+  }
+  [[nodiscard]] std::string_view active_provider() const noexcept {
+    return "unavailable";
+  }
+  [[nodiscard]] std::string_view available_providers() const noexcept {
+    return "[]";
+  }
+  [[nodiscard]] bool provider_fallback() const noexcept { return false; }
+  [[nodiscard]] std::string_view provider_fallback_reason() const noexcept {
     return "ONNX Runtime support is not compiled in";
   }
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
@@ -452,14 +565,15 @@ private:
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path)
     : model_path_(std::move(model_path)),
-      impl_(std::make_unique<Impl>(model_path_, 3U, 0.70, "", "")) {}
+      impl_(std::make_unique<Impl>(model_path_, 3U, 0.70, "", "", "auto",
+                                   true)) {}
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
                                      std::uint32_t inference_interval,
                                      double mask_smoothing)
     : model_path_(std::move(model_path)),
       impl_(std::make_unique<Impl>(model_path_, inference_interval,
-                                   mask_smoothing, "", "")) {}
+                                   mask_smoothing, "", "", "auto", true)) {}
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
                                      std::uint32_t inference_interval,
@@ -469,7 +583,17 @@ OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
     : model_path_(std::move(model_path)),
       impl_(std::make_unique<Impl>(model_path_, inference_interval,
                                    mask_smoothing, std::move(input_shape),
-                                   std::move(output_shape))) {}
+                                   std::move(output_shape), "auto", true)) {}
+
+OnnxRuntimeEngine::OnnxRuntimeEngine(
+    std::string model_path, std::uint32_t inference_interval,
+    double mask_smoothing, std::string input_shape, std::string output_shape,
+    std::string requested_provider, bool allow_provider_fallback)
+    : model_path_(std::move(model_path)),
+      impl_(std::make_unique<Impl>(
+          model_path_, inference_interval, mask_smoothing,
+          std::move(input_shape), std::move(output_shape),
+          std::move(requested_provider), allow_provider_fallback)) {}
 
 OnnxRuntimeEngine::~OnnxRuntimeEngine() = default;
 
@@ -497,6 +621,27 @@ std::string_view OnnxRuntimeEngine::model_path() const noexcept {
 std::string_view OnnxRuntimeEngine::last_error() const noexcept {
   return impl_ == nullptr ? "ONNX Runtime engine is not initialized"
                           : impl_->last_error();
+}
+
+std::string_view OnnxRuntimeEngine::requested_provider() const noexcept {
+  return impl_ == nullptr ? "unavailable" : impl_->requested_provider();
+}
+
+std::string_view OnnxRuntimeEngine::active_provider() const noexcept {
+  return impl_ == nullptr ? "unavailable" : impl_->active_provider();
+}
+
+std::string_view OnnxRuntimeEngine::available_providers() const noexcept {
+  return impl_ == nullptr ? "[]" : impl_->available_providers();
+}
+
+bool OnnxRuntimeEngine::provider_fallback() const noexcept {
+  return impl_ != nullptr && impl_->provider_fallback();
+}
+
+std::string_view OnnxRuntimeEngine::provider_fallback_reason() const noexcept {
+  return impl_ == nullptr ? "ONNX Runtime engine is not initialized"
+                          : impl_->provider_fallback_reason();
 }
 
 } // namespace lmp::ai

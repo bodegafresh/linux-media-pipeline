@@ -1,0 +1,17 @@
+/opt/microsoft/msedge/libonnxruntime.so
+/opt/resolve/libs/libonnxruntime.so.1.13.1
+/usr/lib64/libmigraphx.so
+/usr/lib64/libmigraphx.so.2014000
+/usr/lib64/libmigraphx.so.2014000.0
+/usr/lib64/libonnxruntime_providers_shared.so
+/usr/lib64/libonnxruntime_providers_shared.so.1.22.2
+/usr/lib64/libonnxruntime.so
+/usr/lib64/libonnxruntime.so.1
+/usr/lib64/libonnxruntime.so.1.22.2
+/usr/lib64/rocm/lib/libonnxruntime_providers_rocm.so
+/usr/lib64/rocm/lib/libonnxruntime_providers_shared.so
+/usr/lib64/rocm/lib/libonnxruntime_providers_shared.so.1.22.2
+/usr/lib64/rocm/lib/libonnxruntime.so
+/usr/lib64/rocm/lib/libonnxruntime.so.1
+/usr/lib64/rocm/lib/libonnxruntime.so.1.22.2
+/usr/share/code/resources/app/node_modules.asar.unpacked/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so.1

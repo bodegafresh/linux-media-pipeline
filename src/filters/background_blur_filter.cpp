@@ -95,9 +95,10 @@ __kernel void background_blur(__global const uchar *input,
     uint green_sum = 0;
     uint blue_sum = 0;
     const int signed_radius = (int)radius;
-    for (int ky = -signed_radius; ky <= signed_radius; ++ky) {
+    const int sample_step = signed_radius >= 12 ? 2 : 1;
+    for (int ky = -signed_radius; ky <= signed_radius; ky += sample_step) {
       const int sy = clamp((int)source_y + ky, 0, (int)height - 1);
-      for (int kx = -signed_radius; kx <= signed_radius; ++kx) {
+      for (int kx = -signed_radius; kx <= signed_radius; kx += sample_step) {
         const int sx = clamp((int)source_x + kx, 0, (int)width - 1);
         const uint sample = (((uint)sy) * stride) + (((uint)sx) * pixel_size);
         red_sum += input[sample + red_offset];

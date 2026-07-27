@@ -330,6 +330,53 @@ struct AdaptiveMask {
   double coverage;
 };
 
+struct MaskQuality {
+  double width_fraction;
+  double height_fraction;
+  double aspect;
+};
+
+std::optional<MaskQuality> mask_quality(const ai::SegmentationMask &mask,
+                                        std::uint8_t threshold) {
+  auto min_x = mask.width();
+  auto min_y = mask.height();
+  auto max_x = std::uint32_t{0U};
+  auto max_y = std::uint32_t{0U};
+  auto found = false;
+  for (std::uint32_t y = 0; y < mask.height(); ++y) {
+    for (std::uint32_t x = 0; x < mask.width(); ++x) {
+      if (mask.at(x, y) < threshold) {
+        continue;
+      }
+      min_x = std::min(min_x, x);
+      min_y = std::min(min_y, y);
+      max_x = std::max(max_x, x);
+      max_y = std::max(max_y, y);
+      found = true;
+    }
+  }
+  if (!found) {
+    return std::nullopt;
+  }
+
+  const auto box_width = static_cast<double>(max_x - min_x + 1U);
+  const auto box_height = static_cast<double>(max_y - min_y + 1U);
+  return MaskQuality{box_width / static_cast<double>(mask.width()),
+                     box_height / static_cast<double>(mask.height()),
+                     box_width / box_height};
+}
+
+bool plausible_presenter_mask(const ai::SegmentationMask &mask,
+                              std::uint8_t threshold) {
+  const auto quality = mask_quality(mask, threshold);
+  if (!quality.has_value()) {
+    return false;
+  }
+  return quality->width_fraction >= 0.16 && quality->width_fraction <= 0.88 &&
+         quality->height_fraction >= 0.24 && quality->height_fraction <= 0.98 &&
+         quality->aspect >= 0.14 && quality->aspect <= 2.20;
+}
+
 std::optional<AdaptiveMask>
 adaptive_top_coverage_mask(const ai::SegmentationMask &mask,
                            double target_coverage) {
@@ -787,12 +834,17 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
             std::to_string(recovered->threshold);
         frame.metadata()["segmentation_mask_coverage_adaptive"] =
             std::to_string(recovered_coverage);
+        const auto plausible =
+            plausible_presenter_mask(recovered_mask, foreground_threshold_);
         if (recovered_coverage >= min_mask_coverage_ &&
-            recovered_coverage <= max_mask_coverage_) {
+            recovered_coverage <= max_mask_coverage_ && plausible) {
           mask = std::move(recovered_mask);
           usable_coverage = recovered_coverage;
           frame.metadata()["segmentation_mask_recovered"] =
               "adaptive_threshold";
+        } else if (!plausible) {
+          frame.metadata()["segmentation_mask_recovery_rejected"] =
+              "shape";
         }
       }
     }

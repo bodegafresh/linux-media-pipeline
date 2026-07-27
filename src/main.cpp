@@ -12,7 +12,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -44,6 +46,67 @@ active_filter_list(const std::vector<lmp::config::FilterConfig> &filters) {
     first = false;
   }
   result += "]";
+  return result;
+}
+
+bool bool_parameter(const lmp::config::FilterConfig &filter,
+                    std::string_view name, bool default_value) {
+  const auto found = filter.parameters.find(std::string{name});
+  if (found == filter.parameters.end()) {
+    return default_value;
+  }
+  if (const auto *value = std::get_if<bool>(&found->second)) {
+    return *value;
+  }
+  return default_value;
+}
+
+std::string string_parameter(const lmp::config::FilterConfig &filter,
+                             std::string_view name,
+                             std::string_view default_value) {
+  const auto found = filter.parameters.find(std::string{name});
+  if (found == filter.parameters.end()) {
+    return std::string{default_value};
+  }
+  if (const auto *value = std::get_if<std::string>(&found->second)) {
+    return *value;
+  }
+  return std::string{default_value};
+}
+
+std::string
+pipeline_plan(const std::vector<lmp::config::FilterConfig> &filters) {
+  auto cpu_filters = 0U;
+  auto gpu_filters = 0U;
+  auto fused_filters = 0U;
+  for (const auto &filter : filters) {
+    if (!filter.enabled) {
+      continue;
+    }
+    const auto backend = string_parameter(filter, "backend", "cpu");
+    if (backend == "opencl") {
+      ++gpu_filters;
+    } else {
+      ++cpu_filters;
+    }
+    if (filter.type == "background_blur" &&
+        bool_parameter(filter, "auto_frame", false)) {
+      ++fused_filters;
+    }
+  }
+
+  auto result = std::string{"cpu_filters="} + std::to_string(cpu_filters) +
+                " gpu_filters=" + std::to_string(gpu_filters) +
+                " fused_filters=" + std::to_string(fused_filters);
+  if (fused_filters > 0U && cpu_filters == 0U) {
+    result += " mode=fused_gpu";
+  } else if (gpu_filters > 0U && cpu_filters > 0U) {
+    result += " mode=hybrid";
+  } else if (gpu_filters > 0U) {
+    result += " mode=gpu";
+  } else {
+    result += " mode=cpu";
+  }
   return result;
 }
 
@@ -112,6 +175,7 @@ int main(int argc, char **argv) {
     const auto pipeline =
         lmp::filters::FilterPipeline::from_config(config.filters, registry);
     const auto filters_active = active_filter_list(config.filters);
+    const auto plan = pipeline_plan(config.filters);
 
     lmp::capture::GoProUdpSource capture{config.capture.address};
     if (config.capture.type != capture.type()) {
@@ -148,7 +212,8 @@ int main(int argc, char **argv) {
                 << " width=" << width << " height=" << height << " fps=" << fps
                 << " filter_backend=requested:" << config.gpu.backend
                 << " filters=" << pipeline.size()
-                << " filters_active=" << filters_active << '\n';
+                << " filters_active=" << filters_active << " pipeline_plan=\""
+                << plan << "\"\n";
       bool reported_filter_backend = false;
       bool reported_background_blur_backend = false;
       while (true) {
@@ -189,7 +254,8 @@ int main(int argc, char **argv) {
                 << " width=" << width << " height=" << height << " fps=" << fps
                 << " filter_backend=requested:" << config.gpu.backend
                 << " filters=" << pipeline.size()
-                << " filters_active=" << filters_active << '\n';
+                << " filters_active=" << filters_active << " pipeline_plan=\""
+                << plan << "\"\n";
       bool reported_filter_backend = false;
       bool reported_background_blur_backend = false;
       for (std::uint32_t frame_index = 0;; ++frame_index) {
@@ -225,7 +291,8 @@ int main(int argc, char **argv) {
               << " output_open=" << (output.is_open() ? "true" : "false")
               << " filter_backend=requested:" << config.gpu.backend
               << " filters=" << pipeline.size()
-              << " filters_active=" << filters_active << '\n';
+              << " filters_active=" << filters_active << " pipeline_plan=\""
+              << plan << "\"\n";
     return 0;
   } catch (const std::exception &error) {
     std::cerr << "linux-media-pipeline: " << error.what() << '\n';

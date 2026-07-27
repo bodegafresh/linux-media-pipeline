@@ -59,8 +59,10 @@ public:
         GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
     session_.emplace(env_, model_path.c_str(), session_options_);
 
-    input_name_ = session_->GetInputNameAllocated(0, allocator_);
-    output_name_ = session_->GetOutputNameAllocated(0, allocator_);
+    auto input_name = session_->GetInputNameAllocated(0, allocator_);
+    auto output_name = session_->GetOutputNameAllocated(0, allocator_);
+    input_name_ = input_name.get();
+    output_name_ = output_name.get();
 
     const auto input_info =
         session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
@@ -119,8 +121,8 @@ public:
     auto tensor = Ort::Value::CreateTensor<float>(
         memory_info, input.data(), input.size(), input_shape_.data(),
         input_shape_.size());
-    const char *input_names[] = {input_name_.get()};
-    const char *output_names[] = {output_name_.get()};
+    const char *input_names[] = {input_name_.c_str()};
+    const char *output_names[] = {output_name_.c_str()};
     auto outputs = session_->Run(Ort::RunOptions{nullptr}, input_names, &tensor,
                                  1, output_names, 1);
     if (outputs.empty() || !outputs.front().IsTensor()) {
@@ -175,8 +177,8 @@ private:
   Ort::SessionOptions session_options_;
   Ort::AllocatorWithDefaultOptions allocator_;
   std::optional<Ort::Session> session_;
-  Ort::AllocatedStringPtr input_name_;
-  Ort::AllocatedStringPtr output_name_;
+  std::string input_name_;
+  std::string output_name_;
   std::array<std::int64_t, 4> input_shape_;
   std::optional<SegmentationMask> cached_mask_;
   std::uint64_t frame_index_ = 0;

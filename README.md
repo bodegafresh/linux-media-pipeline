@@ -93,6 +93,13 @@ visual overlays. A usable GPU path should have a sane coverage value and a low
 is near `0.0` or `1.0`, or `cpu_mask_mae` is large, keep that model/provider out
 of the live preset.
 
+To capture one frame directly from the GoPro UDP feed on Fedora:
+
+```bash
+mkdir -p artifacts
+ffmpeg -y -i udp://0.0.0.0:8554 -frames:v 1 -update 1 -pix_fmt rgb24 artifacts/frame.ppm
+```
+
 Validate the virtual camera with a generated pattern:
 
 ```bash

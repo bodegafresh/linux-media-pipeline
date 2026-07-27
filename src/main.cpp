@@ -700,83 +700,97 @@ void segment_diagnostics(const lmp::config::AppConfig &config,
         safe_artifact_name(std::filesystem::path{model_path}.stem().string());
     auto cpu_mask = std::optional<lmp::ai::SegmentationMask>{};
     for (const auto &provider : providers) {
-      auto engine = lmp::ai::OnnxRuntimeEngine{
-          model_path, 1U, 0.0, "1x3x256x256", "1x1x256x256", provider, true,
-          "CPU"};
-      const auto started = std::chrono::steady_clock::now();
-      const auto mask = engine.segment_person_blocking(frame);
-      const auto elapsed = std::chrono::duration<double, std::milli>(
-                               std::chrono::steady_clock::now() - started)
-                               .count();
-      const auto timing = engine.last_timing();
-      const auto coverage = lmp::ai::mask_coverage(mask, kMaskThreshold);
       const auto artifact_prefix =
           model_name + "_" + safe_artifact_name(provider);
-      write_pgm_mask(output_dir / (artifact_prefix + "_mask.pgm"), mask);
-      write_mask_overlay(output_dir / (artifact_prefix + "_overlay.ppm"),
-                         frame, mask, kMaskThreshold);
-      auto cpu_diff = -1.0;
-      if (provider == "cpu") {
-        cpu_mask = mask;
-        baseline_masks.emplace_back(model_name, mask);
-      } else if (cpu_mask.has_value()) {
-        cpu_diff = mask_mean_absolute_difference(*cpu_mask, mask);
-      } else {
-        const auto found = std::find_if(
-            baseline_masks.begin(), baseline_masks.end(),
-            [&](const auto &entry) { return entry.first == model_name; });
-        if (found != baseline_masks.end()) {
-          cpu_diff = mask_mean_absolute_difference(found->second, mask);
+      try {
+        auto engine = lmp::ai::OnnxRuntimeEngine{
+            model_path, 1U, 0.0, "", "", provider, true, "CPU"};
+        const auto started = std::chrono::steady_clock::now();
+        const auto mask = engine.segment_person_blocking(frame);
+        const auto elapsed = std::chrono::duration<double, std::milli>(
+                                 std::chrono::steady_clock::now() - started)
+                                 .count();
+        const auto timing = engine.last_timing();
+        const auto coverage = lmp::ai::mask_coverage(mask, kMaskThreshold);
+        write_pgm_mask(output_dir / (artifact_prefix + "_mask.pgm"), mask);
+        write_mask_overlay(output_dir / (artifact_prefix + "_overlay.ppm"),
+                           frame, mask, kMaskThreshold);
+        auto cpu_diff = -1.0;
+        if (provider == "cpu") {
+          cpu_mask = mask;
+          baseline_masks.emplace_back(model_name, mask);
+        } else if (cpu_mask.has_value()) {
+          cpu_diff = mask_mean_absolute_difference(*cpu_mask, mask);
+        } else {
+          const auto found = std::find_if(
+              baseline_masks.begin(), baseline_masks.end(),
+              [&](const auto &entry) { return entry.first == model_name; });
+          if (found != baseline_masks.end()) {
+            cpu_diff = mask_mean_absolute_difference(found->second, mask);
+          }
         }
-      }
 
-      report_entries.push_back(
-          "    {\n"
-          "      \"model\": \"" +
-          json_escape(model_path) +
-          "\",\n"
-          "      \"provider_requested\": \"" +
-          json_escape(provider) +
-          "\",\n"
-          "      \"provider_active\": \"" +
-          json_escape(engine.active_provider()) +
-          "\",\n"
-          "      \"provider_fallback\": " +
-          std::string{engine.provider_fallback() ? "true" : "false"} +
-          ",\n"
-          "      \"fallback_reason\": \"" +
-          json_escape(engine.provider_fallback_reason()) +
-          "\",\n"
-          "      \"available_providers\": \"" +
-          json_escape(engine.available_providers()) +
-          "\",\n"
-          "      \"model_summary\": \"" + json_escape(engine.model_summary()) +
-          "\",\n"
-          "      \"coverage\": " +
-          std::to_string(coverage) +
-          ",\n"
-          "      \"cpu_mask_mae\": " +
-          std::to_string(cpu_diff) +
-          ",\n"
-          "      \"elapsed_ms\": " +
-          std::to_string(elapsed) +
-          ",\n"
-          "      \"preprocess_ms\": " +
-          std::to_string(timing.preprocess_ms) +
-          ",\n"
-          "      \"inference_ms\": " +
-          std::to_string(timing.inference_ms) +
-          ",\n"
-          "      \"postprocess_ms\": " +
-          std::to_string(timing.postprocess_ms) +
-          ",\n"
-          "      \"mask_path\": \"" +
-          json_escape((output_dir / (artifact_prefix + "_mask.pgm")).string()) +
-          "\",\n"
-          "      \"overlay_path\": \"" +
-          json_escape((output_dir / (artifact_prefix + "_overlay.ppm")).string()) +
-          "\"\n"
-          "    }");
+        report_entries.push_back(
+            "    {\n"
+            "      \"model\": \"" +
+            json_escape(model_path) +
+            "\",\n"
+            "      \"provider_requested\": \"" +
+            json_escape(provider) +
+            "\",\n"
+            "      \"provider_active\": \"" +
+            json_escape(engine.active_provider()) +
+            "\",\n"
+            "      \"provider_fallback\": " +
+            std::string{engine.provider_fallback() ? "true" : "false"} +
+            ",\n"
+            "      \"fallback_reason\": \"" +
+            json_escape(engine.provider_fallback_reason()) +
+            "\",\n"
+            "      \"available_providers\": \"" +
+            json_escape(engine.available_providers()) +
+            "\",\n"
+            "      \"model_summary\": \"" + json_escape(engine.model_summary()) +
+            "\",\n"
+            "      \"coverage\": " +
+            std::to_string(coverage) +
+            ",\n"
+            "      \"cpu_mask_mae\": " +
+            std::to_string(cpu_diff) +
+            ",\n"
+            "      \"elapsed_ms\": " +
+            std::to_string(elapsed) +
+            ",\n"
+            "      \"preprocess_ms\": " +
+            std::to_string(timing.preprocess_ms) +
+            ",\n"
+            "      \"inference_ms\": " +
+            std::to_string(timing.inference_ms) +
+            ",\n"
+            "      \"postprocess_ms\": " +
+            std::to_string(timing.postprocess_ms) +
+            ",\n"
+            "      \"mask_path\": \"" +
+            json_escape((output_dir / (artifact_prefix + "_mask.pgm")).string()) +
+            "\",\n"
+            "      \"overlay_path\": \"" +
+            json_escape((output_dir / (artifact_prefix + "_overlay.ppm")).string()) +
+            "\"\n"
+            "    }");
+      } catch (const std::exception &error) {
+        report_entries.push_back(
+            "    {\n"
+            "      \"model\": \"" +
+            json_escape(model_path) +
+            "\",\n"
+            "      \"provider_requested\": \"" +
+            json_escape(provider) +
+            "\",\n"
+            "      \"error\": \"" +
+            json_escape(error.what()) +
+            "\"\n"
+            "    }");
+      }
     }
   }
 

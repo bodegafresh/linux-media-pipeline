@@ -65,6 +65,9 @@ Before enabling a GPU inference provider in live video, compare CPU and ROCm on
 captured GoPro frames:
 
 ```bash
+mkdir -p artifacts
+ffmpeg -y -i udp://0.0.0.0:8554 -frames:v 1 -update 1 -pix_fmt rgb24 artifacts/frame.ppm
+
 ./build/dev/lmp --config config/presets/ai-background-blur-rocm.yaml \
   --segment-diagnostics artifacts/frame.ppm \
   --segment-output artifacts/segmentation-diagnostics/frame-001 \

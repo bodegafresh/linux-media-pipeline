@@ -30,7 +30,8 @@ public:
                        std::string requested_provider,
                        bool allow_provider_fallback,
                        std::string openvino_device, std::uint32_t mask_expand,
-                       std::uint32_t mask_feather, bool invert_mask);
+                       std::uint32_t mask_feather, bool invert_mask,
+                       bool keep_largest_component);
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -65,6 +66,7 @@ private:
   std::uint32_t mask_expand_;
   std::uint32_t mask_feather_;
   bool invert_mask_;
+  bool keep_largest_component_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable bool onnx_error_reported_;
 };

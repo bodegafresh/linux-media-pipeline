@@ -218,7 +218,8 @@ FilterRegistry create_default_registry() {
             detail::string_parameter(config, "openvino_device", "CPU"),
             detail::coordinate_parameter(config, "mask_expand", 1U),
             detail::coordinate_parameter(config, "mask_feather", 3U),
-            detail::bool_parameter(config, "invert_mask", false));
+            detail::bool_parameter(config, "invert_mask", false),
+            detail::bool_parameter(config, "keep_largest_component", false));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

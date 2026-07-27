@@ -119,6 +119,15 @@ invert_mask: true
 
 The startup diagnostics will print `segmentation_mask_inverted=true`.
 
+For noisy masks that create patchy blur, keep only the main connected person
+region before feathering:
+
+```yaml
+keep_largest_component: true
+```
+
+The diagnostics then include `segmentation_mask_coverage_component`.
+
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.

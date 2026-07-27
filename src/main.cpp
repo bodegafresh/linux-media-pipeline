@@ -310,6 +310,10 @@ public:
                 "segmentation_mask_inverted");
     report_once(metadata, "segmentation_mask_coverage_raw",
                 "segmentation_mask_coverage_raw");
+    report_once(metadata, "segmentation_mask_largest_component",
+                "segmentation_mask_largest_component");
+    report_once(metadata, "segmentation_mask_coverage_component",
+                "segmentation_mask_coverage_component");
     report_once(metadata, "segmentation_mask_coverage_refined",
                 "segmentation_mask_coverage_refined");
     report_once(metadata, "onnx_preprocess_ms", "onnx_preprocess_ms");

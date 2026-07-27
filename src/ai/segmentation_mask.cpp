@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <queue>
 #include <stdexcept>
 
 namespace lmp::ai {
@@ -141,6 +142,64 @@ SegmentationMask invert_mask(const SegmentationMask &mask) {
     values.push_back(static_cast<std::uint8_t>(255U - value));
   }
   return SegmentationMask{mask.width(), mask.height(), std::move(values)};
+}
+
+SegmentationMask largest_component_mask(const SegmentationMask &mask,
+                                        std::uint8_t threshold) {
+  const auto width = mask.width();
+  const auto height = mask.height();
+  const auto size = static_cast<std::size_t>(width) * height;
+  auto visited = std::vector<std::uint8_t>(size, 0U);
+  auto best_component = std::vector<std::size_t>{};
+  auto queue = std::queue<std::size_t>{};
+
+  const auto push_neighbor = [&](std::int32_t x, std::int32_t y) {
+    if (x < 0 || y < 0 || x >= static_cast<std::int32_t>(width) ||
+        y >= static_cast<std::int32_t>(height)) {
+      return;
+    }
+    const auto index =
+        (static_cast<std::size_t>(y) * width) + static_cast<std::size_t>(x);
+    if (visited[index] != 0U || mask.values()[index] < threshold) {
+      return;
+    }
+    visited[index] = 1U;
+    queue.push(index);
+  };
+
+  for (std::uint32_t y = 0; y < height; ++y) {
+    for (std::uint32_t x = 0; x < width; ++x) {
+      const auto start = (static_cast<std::size_t>(y) * width) + x;
+      if (visited[start] != 0U || mask.values()[start] < threshold) {
+        continue;
+      }
+      auto component = std::vector<std::size_t>{};
+      visited[start] = 1U;
+      queue.push(start);
+      while (!queue.empty()) {
+        const auto current = queue.front();
+        queue.pop();
+        component.push_back(current);
+        const auto current_x = static_cast<std::int32_t>(
+            current % static_cast<std::size_t>(width));
+        const auto current_y = static_cast<std::int32_t>(
+            current / static_cast<std::size_t>(width));
+        push_neighbor(current_x - 1, current_y);
+        push_neighbor(current_x + 1, current_y);
+        push_neighbor(current_x, current_y - 1);
+        push_neighbor(current_x, current_y + 1);
+      }
+      if (component.size() > best_component.size()) {
+        best_component = std::move(component);
+      }
+    }
+  }
+
+  auto values = std::vector<std::uint8_t>(size, 0U);
+  for (const auto index : best_component) {
+    values[index] = 255U;
+  }
+  return SegmentationMask{width, height, std::move(values)};
 }
 
 double mask_coverage(const SegmentationMask &mask,

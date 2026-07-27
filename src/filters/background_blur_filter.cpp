@@ -499,7 +499,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
           radius, foreground_threshold, std::move(backend), brightness,
           contrast, saturation, false, 1.0, 1.0, "luminance", 0.28, 0.42,
           "assets/models/person-segmentation.onnx", 3U, 0.70, "tracked_center",
-          "", "", "auto", true, "CPU", 1U, 3U, false) {}
+          "", "", "auto", true, "CPU", 1U, 3U, false, false) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -510,7 +510,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     std::string fallback_mask_mode, std::string input_shape,
     std::string output_shape, std::string requested_provider,
     bool allow_provider_fallback, std::string openvino_device,
-    std::uint32_t mask_expand, std::uint32_t mask_feather, bool invert_mask)
+    std::uint32_t mask_expand, std::uint32_t mask_feather, bool invert_mask,
+    bool keep_largest_component)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -525,6 +526,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       allow_provider_fallback_(allow_provider_fallback),
       openvino_device_(std::move(openvino_device)), mask_expand_(mask_expand),
       mask_feather_(mask_feather), invert_mask_(invert_mask),
+      keep_largest_component_(keep_largest_component),
       onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
@@ -654,6 +656,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     }
     frame.metadata()["segmentation_mask_coverage_raw"] =
         std::to_string(ai::mask_coverage(mask, foreground_threshold_));
+    if (keep_largest_component_) {
+      mask = ai::largest_component_mask(mask, foreground_threshold_);
+      frame.metadata()["segmentation_mask_largest_component"] = "true";
+      frame.metadata()["segmentation_mask_coverage_component"] =
+          std::to_string(ai::mask_coverage(mask, foreground_threshold_));
+    } else {
+      frame.metadata()["segmentation_mask_largest_component"] = "false";
+    }
     const auto timing = onnx_engine_->last_timing();
     frame.metadata()["onnx_preprocess_ms"] =
         std::to_string(timing.preprocess_ms);

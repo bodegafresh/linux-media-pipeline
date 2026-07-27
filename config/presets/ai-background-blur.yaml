@@ -26,14 +26,14 @@ filters:
     allow_provider_fallback: true
     input_shape: 1x3x256x256
     output_shape: 1x1x256x256
-    inference_interval: 2
-    mask_smoothing: 0.55
+    inference_interval: 4
+    mask_smoothing: 0.35
     mask_expand: 1
-    mask_feather: 4
+    mask_feather: 2
     fallback_mask_mode: tracked_center
     mask_width: 0.34
     mask_height: 0.54
-    radius: 8
+    radius: 5
     foreground_threshold: 118
     brightness: 2
     contrast: 1.04

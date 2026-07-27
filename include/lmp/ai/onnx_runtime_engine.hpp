@@ -38,6 +38,7 @@ public:
   [[nodiscard]] std::string_view available_providers() const noexcept;
   [[nodiscard]] bool provider_fallback() const noexcept;
   [[nodiscard]] std::string_view provider_fallback_reason() const noexcept;
+  [[nodiscard]] std::string_view model_summary() const noexcept;
 
 private:
   class Impl;

@@ -4,18 +4,22 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <future>
 #include <numeric>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #if LMP_HAS_ONNXRUNTIME
+#include <dlfcn.h>
 #if __has_include(<onnxruntime_cxx_api.h>)
 #include <onnxruntime_cxx_api.h>
 #elif __has_include(<onnxruntime/core/session/onnxruntime_cxx_api.h>)
@@ -197,6 +201,21 @@ bool provider_list_contains(const std::string &providers,
                             const std::string &provider) {
   return providers.find(provider) != std::string::npos;
 }
+
+bool future_is_ready(std::future<SegmentationMask> &future) {
+  return future.valid() &&
+         future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
+}
+
+void append_int_provider(Ort::SessionOptions &options, const char *symbol) {
+  using AppendProvider = OrtStatus *(*)(OrtSessionOptions *, int);
+  auto *raw_symbol = dlsym(RTLD_DEFAULT, symbol);
+  if (raw_symbol == nullptr) {
+    throw std::runtime_error(std::string{symbol} + " symbol was not loaded");
+  }
+  auto *append_provider = reinterpret_cast<AppendProvider>(raw_symbol);
+  Ort::ThrowOnError(append_provider(options, 0));
+}
 #endif
 
 } // namespace
@@ -225,9 +244,12 @@ public:
         return;
       }
 
-      session_options_.SetIntraOpNumThreads(1);
+      const auto hardware_threads = std::thread::hardware_concurrency();
+      const auto inference_threads =
+          static_cast<int>(std::clamp(hardware_threads / 2U, 1U, 4U));
+      session_options_.SetIntraOpNumThreads(inference_threads);
       session_options_.SetGraphOptimizationLevel(
-          GraphOptimizationLevel::ORT_DISABLE_ALL);
+          GraphOptimizationLevel::ORT_ENABLE_ALL);
       session_.emplace(env_, model_path.c_str(), session_options_);
 
       auto input_name = session_->GetInputNameAllocated(0, allocator_);
@@ -268,6 +290,19 @@ public:
       input_width_axis_ = spatial[spatial.size() - 1U];
       input_channel_axis_ = *channel;
 
+      const auto output_info =
+          session_->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo();
+      auto maybe_output_shape = read_shape(output_info);
+      if (!maybe_output_shape.has_value()) {
+        maybe_output_shape = parse_shape_override(output_shape_);
+      }
+      model_summary_ =
+          "input_name=" + input_name_ + " " +
+          describe_shape("input", maybe_shape) + " input_layout=" +
+          (input_channel_axis_ < input_height_axis_ ? "NCHW" : "NHWC") +
+          " output_name=" + output_name_ + " " +
+          describe_shape("output", maybe_output_shape);
+
       const auto input_height =
           static_cast<std::uint32_t>(input_shape_[input_height_axis_]);
       const auto input_width =
@@ -304,17 +339,52 @@ public:
   [[nodiscard]] std::string_view provider_fallback_reason() const noexcept {
     return provider_fallback_reason_;
   }
+  [[nodiscard]] std::string_view model_summary() const noexcept {
+    return model_summary_;
+  }
 
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     if (!ready_ || !session_.has_value()) {
       return fallback_segment_person(frame);
     }
     ++frame_index_;
-    if (cached_mask_.has_value() && inference_interval_ > 1U &&
-        ((frame_index_ - 1U) % inference_interval_) != 0U) {
-      return *cached_mask_;
+
+    if (pending_mask_.valid() && future_is_ready(pending_mask_)) {
+      try {
+        cached_mask_ = pending_mask_.get();
+      } catch (const std::exception &error) {
+        last_error_ = error.what();
+      }
     }
 
+    const auto should_infer =
+        !cached_mask_.has_value() ||
+        (inference_interval_ <= 1U ||
+         ((frame_index_ - 1U) % inference_interval_) == 0U);
+    if (should_infer && !pending_mask_.valid()) {
+      if (!cached_mask_.has_value()) {
+        cached_mask_ = infer_mask(frame, std::nullopt);
+      } else {
+        auto snapshot = frame;
+        auto previous = cached_mask_;
+        pending_mask_ = std::async(std::launch::async,
+                                   [this, snapshot = std::move(snapshot),
+                                    previous = std::move(previous)] {
+                                     return infer_mask(snapshot, previous);
+                                   });
+      }
+    }
+
+    if (cached_mask_.has_value()) {
+      return *cached_mask_;
+    }
+    return fallback_segment_person(frame);
+  }
+
+private:
+  [[nodiscard]] SegmentationMask
+  infer_mask(const frame::Frame &frame,
+             const std::optional<SegmentationMask> &previous_mask) {
     const auto input_height =
         static_cast<std::uint32_t>(input_shape_[input_height_axis_]);
     const auto input_width =
@@ -464,15 +534,14 @@ public:
       }
     }
     auto current = SegmentationMask{mask_width, mask_height, std::move(mask)};
-    if (cached_mask_.has_value() && cached_mask_->width() == current.width() &&
-        cached_mask_->height() == current.height()) {
-      current = current.blend_with(*cached_mask_, mask_smoothing_);
+    if (previous_mask.has_value() &&
+        previous_mask->width() == current.width() &&
+        previous_mask->height() == current.height()) {
+      current = current.blend_with(*previous_mask, mask_smoothing_);
     }
-    cached_mask_ = current;
     return current;
   }
 
-private:
   void select_provider() {
     if (requested_provider_.empty()) {
       requested_provider_ = "auto";
@@ -481,11 +550,22 @@ private:
     provider_fallback_ = false;
     provider_fallback_reason_.clear();
 
-    if (requested_provider_ == "auto" || requested_provider_ == "cpu") {
+    if (requested_provider_ == "cpu") {
       return;
     }
 
-    const auto requested = canonical_provider(requested_provider_);
+    auto requested = canonical_provider(requested_provider_);
+    if (requested_provider_ == "auto") {
+      if (provider_list_contains(available_providers_,
+                                 "MIGraphXExecutionProvider")) {
+        requested = "MIGraphXExecutionProvider";
+      } else if (provider_list_contains(available_providers_,
+                                        "ROCMExecutionProvider")) {
+        requested = "ROCMExecutionProvider";
+      } else {
+        return;
+      }
+    }
     if (!provider_list_contains(available_providers_, requested)) {
       provider_fallback_ = true;
       provider_fallback_reason_ = requested + " unavailable";
@@ -495,11 +575,30 @@ private:
       return;
     }
 
-    provider_fallback_ = true;
-    provider_fallback_reason_ =
-        requested + " available but explicit provider activation is not "
-                    "implemented; using CPUExecutionProvider";
-    if (!allow_provider_fallback_) {
+    try {
+      if (requested == "ROCMExecutionProvider") {
+        append_int_provider(session_options_,
+                            "OrtSessionOptionsAppendExecutionProvider_ROCM");
+        active_provider_ = requested;
+        return;
+      }
+      if (requested == "MIGraphXExecutionProvider") {
+        append_int_provider(
+            session_options_,
+            "OrtSessionOptionsAppendExecutionProvider_MIGraphX");
+        active_provider_ = requested;
+        return;
+      }
+      provider_fallback_ = true;
+      provider_fallback_reason_ =
+          requested + " available but activation is not implemented in this "
+                      "build; using CPUExecutionProvider";
+    } catch (const std::exception &error) {
+      provider_fallback_ = true;
+      provider_fallback_reason_ =
+          requested + " activation failed: " + error.what();
+    }
+    if (provider_fallback_ && !allow_provider_fallback_) {
       last_error_ = provider_fallback_reason_;
     }
   }
@@ -517,6 +616,7 @@ private:
   std::size_t input_width_axis_ = 3U;
   std::size_t input_channel_axis_ = 1U;
   std::optional<SegmentationMask> cached_mask_;
+  std::future<SegmentationMask> pending_mask_;
   std::uint64_t frame_index_ = 0;
   std::uint32_t inference_interval_ = 3;
   double mask_smoothing_ = 0.70;
@@ -528,6 +628,7 @@ private:
   std::string active_provider_ = "CPUExecutionProvider";
   std::string available_providers_ = "[]";
   std::string provider_fallback_reason_;
+  std::string model_summary_;
   std::string last_error_;
 #else
   Impl(const std::string &, std::uint32_t, double, std::string, std::string,
@@ -548,6 +649,9 @@ private:
   [[nodiscard]] bool provider_fallback() const noexcept { return false; }
   [[nodiscard]] std::string_view provider_fallback_reason() const noexcept {
     return "ONNX Runtime support is not compiled in";
+  }
+  [[nodiscard]] std::string_view model_summary() const noexcept {
+    return "unavailable";
   }
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     return fallback_segment_person(frame);
@@ -634,6 +738,10 @@ bool OnnxRuntimeEngine::provider_fallback() const noexcept {
 std::string_view OnnxRuntimeEngine::provider_fallback_reason() const noexcept {
   return impl_ == nullptr ? "ONNX Runtime engine is not initialized"
                           : impl_->provider_fallback_reason();
+}
+
+std::string_view OnnxRuntimeEngine::model_summary() const noexcept {
+  return impl_ == nullptr ? "unavailable" : impl_->model_summary();
 }
 
 } // namespace lmp::ai

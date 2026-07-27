@@ -124,6 +124,7 @@ public:
                 "onnx_runtime_provider_fallback");
     report_once(metadata, "onnx_runtime_provider_fallback_reason",
                 "onnx_runtime_provider_fallback_reason");
+    report_once(metadata, "onnx_runtime_model", "onnx_runtime_model");
   }
 
 private:

@@ -554,6 +554,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
       onnx_engine_->provider_fallback() ? "true" : "false";
   frame.metadata()["onnx_runtime_provider_fallback_reason"] =
       std::string{onnx_engine_->provider_fallback_reason()};
+  frame.metadata()["onnx_runtime_model"] =
+      std::string{onnx_engine_->model_summary()};
   if (!onnx_engine_->available()) {
     frame.metadata()["background_blur_mask"] =
         "onnx_unavailable_" + fallback_mask_mode_;

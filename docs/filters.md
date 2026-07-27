@@ -66,6 +66,7 @@ background_blur_mask_active=onnx
 onnx_runtime_provider_requested=auto
 onnx_runtime_provider_active=CPUExecutionProvider
 onnx_runtime_provider_fallback=false
+onnx_runtime_model=input_name=image input_rank=4 input_dims=[1x3x256x256] ...
 ```
 
 That line means `background_blur` is using the real
@@ -78,14 +79,14 @@ The provider lines show what ONNX Runtime actually selected. A fallback of
 The AI blur preset exposes the main performance knobs:
 
 ```yaml
-inference_interval: 2
-mask_smoothing: 0.55
+inference_interval: 4
+mask_smoothing: 0.35
 mask_expand: 1
-mask_feather: 4
+mask_feather: 2
 fallback_mask_mode: tracked_center
 provider: auto
 allow_provider_fallback: true
-radius: 8
+radius: 5
 ```
 
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
@@ -96,6 +97,8 @@ lower values follow movement faster, higher values look steadier.
 less harsh.
 The ONNX mask is intentionally kept at model resolution and scaled in the GPU
 kernel; refining it at full 1280x720 is too expensive for live video.
+ONNX inference runs asynchronously after the first mask, so the output keeps
+using the latest valid mask while the next one is calculated.
 `fallback_mask_mode: tracked_center` keeps video usable when ONNX fails by
 tracking the crop with a lightweight foreground heuristic. `radius` controls
 background blur strength; higher values blur more but cost more GPU time.

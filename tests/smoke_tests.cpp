@@ -409,6 +409,9 @@ int main() {
   ok = expect(!onnx.active_provider().empty(),
               "onnx active provider is reportable") &&
        ok;
+  ok = expect(!onnx.model_summary().empty(),
+              "onnx model summary is reportable") &&
+       ok;
   ok =
       expect(inferred_mask.at(0U, 0U) == 0U && inferred_mask.at(1U, 0U) == 255U,
              "onnx fallback segmentation") &&

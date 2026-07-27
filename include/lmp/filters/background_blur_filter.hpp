@@ -74,6 +74,7 @@ private:
   double hint_y_offset_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable std::optional<ai::SegmentationMask> last_good_person_mask_;
+  mutable std::uint32_t last_good_person_mask_reuse_count_ = 0;
   mutable std::optional<std::array<double, 4>> previous_auto_frame_crop_;
   mutable bool onnx_error_reported_;
 };

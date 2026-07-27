@@ -170,14 +170,16 @@ If `background_blur_mask_active=onnx_hint_ellipse` or
 being rejected by coverage checks and the segmentation tuning needs another
 pass.
 
-For live streaming, a rejected or failed ONNX frame reuses the last accepted
-person matte before falling back to the ellipse. This avoids visible flicker
-where one bad inference suddenly blurs the presenter. The stream reports this
+For live streaming, a rejected or failed ONNX frame briefly reuses the last
+accepted person matte before falling back to the ellipse. This avoids a single
+bad inference suddenly blurring the presenter, but the reuse is capped so the
+matte does not visibly lag behind movement for seconds. The stream reports this
 as:
 
 ```text
 background_blur_mask_active=onnx_previous
 segmentation_mask_reused_previous=true
+segmentation_mask_previous_reuse_count=...
 ```
 
 For recording or streaming today, prefer the stable preset:
@@ -225,8 +227,8 @@ resolution. Useful knobs:
 ```
 
 When `auto_frame` is enabled inside `background_blur`, the OpenCL path applies a
-deadband plus slow center/zoom steps so the crop follows the presenter without
-breathing in and out on every small segmentation change. The applied crop is
+small deadband plus center/zoom step limits so the crop follows the presenter
+without breathing in and out on every small segmentation change. The applied crop is
 reported as:
 
 ```text

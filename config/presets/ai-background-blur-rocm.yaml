@@ -27,10 +27,10 @@ filters:
     openvino_device: CPU
     input_shape: 1x3x256x256
     output_shape: 1x1x256x256
-    inference_interval: 4
-    mask_smoothing: 0.65
-    mask_expand: 3
-    mask_feather: 5
+    inference_interval: 3
+    mask_smoothing: 0.25
+    mask_expand: 2
+    mask_feather: 3
     invert_mask: true
     keep_largest_component: true
     min_mask_coverage: 0.05

@@ -528,14 +528,14 @@ Crop smooth_crop(Crop desired,
   const auto size_delta = std::abs(desired.width - previous.width) +
                           std::abs(desired.height - previous.height);
   const auto dead_zone_pixels =
-      0.055 * static_cast<double>(std::min(frame_width, frame_height));
+      0.025 * static_cast<double>(std::min(frame_width, frame_height));
   if (movement <= dead_zone_pixels && size_delta <= (dead_zone_pixels * 1.5)) {
     return previous;
   }
 
-  constexpr auto kSmoothing = 0.90;
-  constexpr auto kMaxCenterStepFraction = 0.025;
-  constexpr auto kMaxSizeStepFraction = 0.015;
+  constexpr auto kSmoothing = 0.68;
+  constexpr auto kMaxCenterStepFraction = 0.10;
+  constexpr auto kMaxSizeStepFraction = 0.06;
   const auto center_blend = 1.0 - kSmoothing;
   const auto max_center_step =
       kMaxCenterStepFraction *
@@ -786,9 +786,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
           "onnx_rejected_" + fallback_mask_mode_;
       frame.metadata()["segmentation_mask_rejected"] =
           "coverage:" + std::to_string(usable_coverage);
-      if (last_good_person_mask_.has_value()) {
+      constexpr auto kMaxPreviousMaskReuses = 6U;
+      if (last_good_person_mask_.has_value() &&
+          last_good_person_mask_reuse_count_ < kMaxPreviousMaskReuses) {
+        ++last_good_person_mask_reuse_count_;
         frame.metadata()["background_blur_mask"] = "onnx_previous";
         frame.metadata()["segmentation_mask_reused_previous"] = "true";
+        frame.metadata()["segmentation_mask_previous_reuse_count"] =
+            std::to_string(last_good_person_mask_reuse_count_);
         return last_good_person_mask_;
       }
       if (hint_mask.has_value()) {
@@ -814,6 +819,7 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
         "expand:" + std::to_string(mask_expand_) +
         ",feather:" + std::to_string(mask_feather_);
     last_good_person_mask_ = mask;
+    last_good_person_mask_reuse_count_ = 0;
     return mask;
   } catch (const std::exception &error) {
     frame.metadata()["background_blur_mask"] =
@@ -823,9 +829,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
                 << error.what() << "\"\n";
       onnx_error_reported_ = true;
     }
-    if (last_good_person_mask_.has_value()) {
+    constexpr auto kMaxPreviousMaskReuses = 6U;
+    if (last_good_person_mask_.has_value() &&
+        last_good_person_mask_reuse_count_ < kMaxPreviousMaskReuses) {
+      ++last_good_person_mask_reuse_count_;
       frame.metadata()["background_blur_mask"] = "onnx_previous";
       frame.metadata()["segmentation_mask_reused_previous"] = "true";
+      frame.metadata()["segmentation_mask_previous_reuse_count"] =
+          std::to_string(last_good_person_mask_reuse_count_);
       return last_good_person_mask_;
     }
     return std::nullopt;

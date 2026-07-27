@@ -27,19 +27,19 @@ filters:
     openvino_device: CPU
     input_shape: 1x3x192x192
     output_shape: 1x1x192x192
-    inference_interval: 4
-    mask_smoothing: 0.35
-    mask_expand: 2
-    mask_feather: 3
+    inference_interval: 3
+    mask_smoothing: 0.48
+    mask_expand: 3
+    mask_feather: 5
     invert_mask: false
     keep_largest_component: true
-    min_mask_coverage: 0.04
-    max_mask_coverage: 0.55
+    min_mask_coverage: 0.025
+    max_mask_coverage: 0.36
     fallback_mask_mode: tracked_center
-    mask_width: 0.50
-    mask_height: 0.82
+    mask_width: 0.44
+    mask_height: 0.74
     radius: 14
-    foreground_threshold: 180
+    foreground_threshold: 128
     brightness: 2
     contrast: 1.04
     saturation: 1.03

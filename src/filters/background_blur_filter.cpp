@@ -326,7 +326,7 @@ OpenClBackgroundBlurResources &opencl_background_resources() {
 }
 #endif
 
-constexpr auto kMaxPreviousMaskReuses = 4U;
+constexpr auto kMaxPreviousMaskReuses = 18U;
 constexpr auto kBadMaskStreakBeforeCooldown = 3U;
 constexpr auto kBadMaskCooldownFrames = 150U;
 
@@ -767,6 +767,9 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   frame.metadata()["segmentation_inference_backend"] =
       std::string{onnx_engine_->active_provider()};
   const auto active_provider = std::string{onnx_engine_->active_provider()};
+  const auto should_enter_bad_mask_cooldown =
+      active_provider == "ROCMExecutionProvider" ||
+      active_provider == "MIGraphXExecutionProvider";
   if (active_provider == "ROCMExecutionProvider") {
     frame.metadata()["segmentation_inference_device"] = "ROCm";
   } else if (active_provider == "MIGraphXExecutionProvider") {
@@ -853,7 +856,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
             std::to_string(last_good_person_mask_reuse_count_);
         return last_good_person_mask_;
       }
-      if (bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
+      if (should_enter_bad_mask_cooldown &&
+          bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
         onnx_mask_cooldown_frames_ = kBadMaskCooldownFrames;
         bad_person_mask_streak_ = 0U;
         frame.metadata()["background_blur_mask"] =
@@ -882,7 +886,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
               std::to_string(last_good_person_mask_reuse_count_);
           return last_good_person_mask_;
         }
-        if (bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
+        if (should_enter_bad_mask_cooldown &&
+            bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
           onnx_mask_cooldown_frames_ = kBadMaskCooldownFrames;
           bad_person_mask_streak_ = 0U;
           frame.metadata()["background_blur_mask"] =
@@ -938,7 +943,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
           std::to_string(last_good_person_mask_reuse_count_);
       return last_good_person_mask_;
     }
-    if (bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
+    if (should_enter_bad_mask_cooldown &&
+        bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
       onnx_mask_cooldown_frames_ = kBadMaskCooldownFrames;
       bad_person_mask_streak_ = 0U;
       frame.metadata()["background_blur_mask"] =

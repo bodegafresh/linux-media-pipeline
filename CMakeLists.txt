@@ -13,6 +13,7 @@ option(LMP_ENABLE_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 option(LMP_ENABLE_FFMPEG "Enable in-process FFmpeg decoder when available" ON)
 option(LMP_ENABLE_OPENCL "Enable OpenCL GPU filters when available" ON)
 option(LMP_ENABLE_ONNXRUNTIME "Enable ONNX Runtime segmentation when available" ON)
+set(ONNXRUNTIME_ROOT "" CACHE PATH "Preferred ONNX Runtime installation root")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(LmpCompilerOptions)
@@ -45,13 +46,40 @@ set(LMP_HAS_ONNXRUNTIME OFF)
 set(LMP_HAS_ONNXRUNTIME_MIGRAPHX OFF)
 set(LMP_HAS_MIGRAPHX OFF)
 set(LMP_HAS_ROCM_RUNTIME OFF)
+set(ONNXRUNTIME_USE_PKGCONFIG OFF)
 if(LMP_ENABLE_ONNXRUNTIME)
-  if(PkgConfig_FOUND)
-    pkg_check_modules(ONNXRUNTIME QUIET IMPORTED_TARGET libonnxruntime)
+  if(ONNXRUNTIME_ROOT)
+    find_path(ONNXRUNTIME_INCLUDE_DIR
+      NAMES onnxruntime_cxx_api.h
+      PATHS
+        "${ONNXRUNTIME_ROOT}/include"
+        "${ONNXRUNTIME_ROOT}/include/onnxruntime"
+        "${ONNXRUNTIME_ROOT}/../include"
+        /usr/include
+      PATH_SUFFIXES
+        onnxruntime
+        onnxruntime/core/session
+      NO_DEFAULT_PATH
+    )
+    find_library(ONNXRUNTIME_LIBRARY
+      NAMES onnxruntime
+      PATHS
+        "${ONNXRUNTIME_ROOT}/lib64"
+        "${ONNXRUNTIME_ROOT}/lib"
+        "${ONNXRUNTIME_ROOT}"
+      NO_DEFAULT_PATH
+    )
   endif()
-  if(ONNXRUNTIME_FOUND)
+  if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
     set(LMP_HAS_ONNXRUNTIME ON)
-  else()
+  elseif(PkgConfig_FOUND)
+    pkg_check_modules(ONNXRUNTIME QUIET IMPORTED_TARGET libonnxruntime)
+    if(ONNXRUNTIME_FOUND)
+      set(LMP_HAS_ONNXRUNTIME ON)
+      set(ONNXRUNTIME_USE_PKGCONFIG ON)
+    endif()
+  endif()
+  if(NOT LMP_HAS_ONNXRUNTIME)
     find_path(ONNXRUNTIME_INCLUDE_DIR
       NAMES onnxruntime_cxx_api.h
       PATH_SUFFIXES
@@ -63,6 +91,17 @@ if(LMP_ENABLE_ONNXRUNTIME)
       set(LMP_HAS_ONNXRUNTIME ON)
     endif()
   endif()
+endif()
+find_library(ONNXRUNTIME_MIGRAPHX_PROVIDER_LIBRARY
+  NAMES onnxruntime_providers_migraphx
+  PATHS
+    "${ONNXRUNTIME_ROOT}/lib64"
+    "${ONNXRUNTIME_ROOT}/lib"
+    "${ONNXRUNTIME_ROOT}"
+  PATH_SUFFIXES onnxruntime
+)
+if(ONNXRUNTIME_MIGRAPHX_PROVIDER_LIBRARY)
+  set(LMP_HAS_ONNXRUNTIME_MIGRAPHX ON)
 endif()
 find_library(MIGRAPHX_LIBRARY migraphx)
 if(MIGRAPHX_LIBRARY)
@@ -78,6 +117,9 @@ message(STATUS "LMP_HAS_ONNXRUNTIME=${LMP_HAS_ONNXRUNTIME}")
 message(STATUS "LMP_HAS_ONNXRUNTIME_MIGRAPHX=${LMP_HAS_ONNXRUNTIME_MIGRAPHX}")
 message(STATUS "LMP_HAS_MIGRAPHX=${LMP_HAS_MIGRAPHX}")
 message(STATUS "LMP_HAS_ROCM_RUNTIME=${LMP_HAS_ROCM_RUNTIME}")
+message(STATUS "ONNXRUNTIME_ROOT=${ONNXRUNTIME_ROOT}")
+message(STATUS "ONNXRUNTIME_LIBRARY=${ONNXRUNTIME_LIBRARY}")
+message(STATUS "ONNXRUNTIME_MIGRAPHX_PROVIDER_LIBRARY=${ONNXRUNTIME_MIGRAPHX_PROVIDER_LIBRARY}")
 
 add_library(lmp_core
   src/ai/onnx_runtime_engine.cpp
@@ -141,11 +183,15 @@ if(LMP_HAS_OPENCL)
   target_link_libraries(lmp_core PUBLIC OpenCL::OpenCL)
 endif()
 if(LMP_HAS_ONNXRUNTIME)
-  if(TARGET PkgConfig::ONNXRUNTIME)
+  if(ONNXRUNTIME_USE_PKGCONFIG AND TARGET PkgConfig::ONNXRUNTIME)
     target_link_libraries(lmp_core PUBLIC PkgConfig::ONNXRUNTIME)
   else()
     target_include_directories(lmp_core SYSTEM PUBLIC "${ONNXRUNTIME_INCLUDE_DIR}")
     target_link_libraries(lmp_core PUBLIC "${ONNXRUNTIME_LIBRARY}")
+    get_filename_component(ONNXRUNTIME_LIBRARY_DIR "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
+    set_property(TARGET lmp_core APPEND PROPERTY
+      BUILD_RPATH "${ONNXRUNTIME_LIBRARY_DIR}"
+    )
   endif()
   target_link_libraries(lmp_core PUBLIC ${CMAKE_DL_LIBS})
 endif()

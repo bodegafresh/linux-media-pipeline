@@ -65,3 +65,32 @@ artifacts/onnx-migraphx-gpu-activity.txt
 Treat `gpu_execution_verified=true` as valid only together with
 `onnx_runtime_provider_active=MIGraphXExecutionProvider` and no provider
 fallback.
+
+## Installed But Not Enumerated
+
+If `migraphx` is installed but `--list-onnx-providers` still shows only:
+
+```text
+CPUExecutionProvider
+```
+
+then the process is still loading the CPU ONNX Runtime library. Rebuild from a
+clean build directory so `scripts/build.sh` can pass the ROCm ONNX Runtime root
+detected from the RPM database:
+
+```bash
+rm -rf build/dev
+./scripts/build.sh
+./scripts/check-runtime-linkage.sh
+./build/dev/lmp --list-onnx-providers
+```
+
+The CMake configure log should print a non-empty `ONNXRUNTIME_ROOT`,
+`ONNXRUNTIME_LIBRARY`, and ideally `ONNXRUNTIME_MIGRAPHX_PROVIDER_LIBRARY`.
+If the provider still does not enumerate, inspect:
+
+```text
+artifacts/runtime-linkage/ldd.txt
+artifacts/runtime-linkage/rpm-files.txt
+artifacts/runtime-linkage/duplicate-runtimes.txt
+```

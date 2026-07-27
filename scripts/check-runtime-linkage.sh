@@ -13,9 +13,19 @@ fi
 
 ldd "${binary}" > "${out_dir}/ldd.txt" 2>&1 || true
 readelf -d "${binary}" > "${out_dir}/readelf-dynamic.txt" 2>&1 || true
+if command -v rpm >/dev/null 2>&1; then
+  rpm -ql onnxruntime onnxruntime-devel onnxruntime-rocm \
+    onnxruntime-rocm-devel migraphx migraphx-devel \
+    > "${out_dir}/rpm-files.txt" 2>&1 || true
+fi
 
 find /usr /usr/local /opt "${HOME}/.local" \
-  \( -name 'libonnxruntime.so*' -o -name 'libmigraphx.so*' \) \
+  \( -name 'libonnxruntime.so*' \
+     -o -name 'libonnxruntime_providers_*.so*' \
+     -o -name 'libmigraphx.so*' \) \
   2>/dev/null | sort > "${out_dir}/duplicate-runtimes.txt" || true
 
+echo "== linked ONNX Runtime libraries =="
+grep -E 'onnxruntime|migraphx|hip|hsa' "${out_dir}/ldd.txt" || true
+echo
 echo "Wrote runtime linkage report to ${out_dir}"

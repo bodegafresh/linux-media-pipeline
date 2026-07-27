@@ -72,9 +72,9 @@ __kernel void background_blur(__global const uchar *input,
   const uchar luma = convert_uchar_sat_rte((0.299f * red) + (0.587f * green) + (0.114f * blue));
   const float nx = (((float)x + 0.5f) / (float)width - 0.5f) / mask_width;
   const float ny = (((float)y + 0.5f) / (float)height - 0.48f) / mask_height;
-  const float center_distance = (nx * nx) + (ny * ny);
+  const float center_distance = (nx * nx * nx * nx) + (ny * ny * ny * ny);
   const float center_foreground_alpha =
-      1.0f - smoothstep(0.72f, 1.18f, center_distance);
+      1.0f - smoothstep(0.58f, 1.08f, center_distance);
   const uint mask_x = min((source_x * mask_width_px) / width, mask_width_px - 1U);
   const uint mask_y = min((source_y * mask_height_px) / height, mask_height_px - 1U);
   const uchar mask_value = mask[(mask_y * mask_width_px) + mask_x];

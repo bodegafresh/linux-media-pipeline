@@ -114,3 +114,19 @@ then use the Fedora ROCm preset:
 ./scripts/verify-onnx-gpu.sh rocm config/presets/ai-background-blur-rocm.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur-rocm.yaml --stats-every 5
 ```
+
+For quality validation, do not rely on provider activation alone. First compare
+candidate models on static frames:
+
+```bash
+./scripts/stream.sh install-model all
+./build/dev/lmp --config config/presets/ai-background-blur-rocm.yaml \
+  --segment-diagnostics artifacts/frame.ppm \
+  --segment-output artifacts/segmentation-diagnostics/frame-001 \
+  --segment-providers cpu,rocm \
+  --segment-model assets/models/mediapipe-selfie.onnx,assets/models/pphumanseg.onnx
+```
+
+Use the generated `report.json` and `*_overlay.ppm` files to choose the model
+where ROCm matches CPU closely enough for live video. A GPU provider that is
+fast but produces saturated or empty masks is not considered production-ready.

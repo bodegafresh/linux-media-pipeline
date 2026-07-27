@@ -55,6 +55,28 @@ Then rebuild and verify:
 ./scripts/benchmark-onnx-providers.sh config/presets/ai-background-blur-migraphx.yaml
 ```
 
+Install the segmentation candidates used for Fedora validation:
+
+```bash
+./scripts/stream.sh install-model all
+```
+
+Before enabling a GPU inference provider in live video, compare CPU and ROCm on
+captured GoPro frames:
+
+```bash
+./build/dev/lmp --config config/presets/ai-background-blur-rocm.yaml \
+  --segment-diagnostics artifacts/frame.ppm \
+  --segment-output artifacts/segmentation-diagnostics/frame-001 \
+  --segment-providers cpu,rocm \
+  --segment-model assets/models/mediapipe-selfie.onnx,assets/models/pphumanseg.onnx
+```
+
+Inspect `artifacts/segmentation-diagnostics/frame-001/report.json` and the
+`*_overlay.ppm` outputs. A usable ROCm path must produce a mask that resembles
+the CPU mask for the same model. Treat `coverage` close to `0.0` or `1.0`, or a
+large `cpu_mask_mae`, as a failed model/provider combination.
+
 The provider list must show `MIGraphXExecutionProvider` before the MIGraphX live
 preset can use AMD GPU inference. If Fedora shows `ROCMExecutionProvider`
 instead, use:

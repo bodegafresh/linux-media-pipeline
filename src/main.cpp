@@ -53,7 +53,18 @@ void print_help() {
          "diagnostic artifacts.\n"
       << "  --diagnose-output DIR\n"
          "                   Output directory for --diagnose-frame. Default: "
-         "artifacts/frame-diagnostics.\n";
+         "artifacts/frame-diagnostics.\n"
+      << "  --segment-diagnostics PATH\n"
+         "                   Run ONNX segmentation diagnostics on a PPM P6 "
+         "frame.\n"
+      << "  --segment-output DIR\n"
+         "                   Output directory for --segment-diagnostics. "
+         "Default: artifacts/segmentation-diagnostics.\n"
+      << "  --segment-model PATH[,PATH...]\n"
+         "                   ONNX model path(s) to compare. Defaults to config "
+         "AI model.\n"
+      << "  --segment-providers PROVIDER[,PROVIDER...]\n"
+         "                   Providers to compare. Default: cpu,rocm.\n";
 }
 
 void list_onnx_providers() {
@@ -88,6 +99,55 @@ bool bool_parameter(const lmp::config::FilterConfig &filter,
 std::string string_parameter(const lmp::config::FilterConfig &filter,
                              std::string_view name,
                              std::string_view default_value);
+
+std::vector<std::string> split_csv(std::string_view value) {
+  auto result = std::vector<std::string>{};
+  auto current = std::string{};
+  for (const auto character : value) {
+    if (character == ',') {
+      if (!current.empty()) {
+        result.push_back(current);
+        current.clear();
+      }
+      continue;
+    }
+    if (std::isspace(static_cast<unsigned char>(character)) == 0) {
+      current.push_back(character);
+    }
+  }
+  if (!current.empty()) {
+    result.push_back(current);
+  }
+  return result;
+}
+
+std::string json_escape(std::string_view value) {
+  auto result = std::string{};
+  for (const auto character : value) {
+    if (character == '"' || character == '\\') {
+      result.push_back('\\');
+      result.push_back(character);
+    } else if (character == '\n') {
+      result += "\\n";
+    } else {
+      result.push_back(character);
+    }
+  }
+  return result;
+}
+
+std::string safe_artifact_name(std::string_view value) {
+  auto result = std::string{};
+  for (const auto character : value) {
+    if (std::isalnum(static_cast<unsigned char>(character)) != 0 ||
+        character == '-' || character == '_') {
+      result.push_back(character);
+    } else {
+      result.push_back('_');
+    }
+  }
+  return result.empty() ? "artifact" : result;
+}
 
 void verify_onnx_provider(const lmp::config::AppConfig &config,
                           std::string_view provider_override) {
@@ -549,6 +609,198 @@ void write_ppm_frame(const std::filesystem::path &path,
                static_cast<std::streamsize>(bytes.size()));
 }
 
+void write_pgm_mask(const std::filesystem::path &path,
+                    const lmp::ai::SegmentationMask &mask) {
+  std::ofstream output{path, std::ios::binary};
+  if (!output) {
+    throw std::runtime_error("cannot write diagnostic mask: " + path.string());
+  }
+  output << "P5\n" << mask.width() << ' ' << mask.height() << "\n255\n";
+  const auto values = mask.values();
+  output.write(reinterpret_cast<const char *>(values.data()),
+               static_cast<std::streamsize>(values.size()));
+}
+
+void write_mask_overlay(const std::filesystem::path &path,
+                        const lmp::frame::Frame &frame,
+                        const lmp::ai::SegmentationMask &mask,
+                        std::uint8_t threshold) {
+  if (frame.format() != lmp::frame::PixelFormat::Rgb) {
+    throw std::runtime_error("mask overlay writer requires RGB frames");
+  }
+  auto output_frame = frame;
+  const auto original_bytes = output_frame.data();
+  auto bytes =
+      std::vector<std::uint8_t>{original_bytes.begin(), original_bytes.end()};
+  for (std::uint32_t y = 0; y < frame.height(); ++y) {
+    const auto mask_y = std::min(
+        (static_cast<std::uint64_t>(y) * mask.height()) / frame.height(),
+        static_cast<std::uint64_t>(mask.height() - 1U));
+    for (std::uint32_t x = 0; x < frame.width(); ++x) {
+      const auto mask_x = std::min(
+          (static_cast<std::uint64_t>(x) * mask.width()) / frame.width(),
+          static_cast<std::uint64_t>(mask.width() - 1U));
+      const auto mask_value = mask.at(static_cast<std::uint32_t>(mask_x),
+                                      static_cast<std::uint32_t>(mask_y));
+      const auto offset = ((static_cast<std::size_t>(y) * frame.width()) + x) *
+                          static_cast<std::size_t>(3U);
+      if (mask_value >= threshold) {
+        bytes[offset + 1U] = static_cast<std::uint8_t>(
+            std::min(255U, static_cast<unsigned>(bytes[offset + 1U]) + 90U));
+      } else {
+        bytes[offset] = static_cast<std::uint8_t>(
+            static_cast<unsigned>(bytes[offset]) / 2U);
+        bytes[offset + 1U] = static_cast<std::uint8_t>(
+            static_cast<unsigned>(bytes[offset + 1U]) / 2U);
+        bytes[offset + 2U] = static_cast<std::uint8_t>(
+            std::min(255U, static_cast<unsigned>(bytes[offset + 2U]) + 50U));
+      }
+    }
+  }
+  output_frame = lmp::frame::Frame{
+      frame.width(),
+      frame.height(),
+      lmp::frame::PixelFormat::Rgb,
+      std::move(bytes),
+      std::vector<std::size_t>{static_cast<std::size_t>(frame.width()) * 3U},
+      frame.timestamp()};
+  write_ppm_frame(path, output_frame);
+}
+
+double mask_mean_absolute_difference(const lmp::ai::SegmentationMask &left,
+                                     const lmp::ai::SegmentationMask &right) {
+  if (left.width() != right.width() || left.height() != right.height()) {
+    return -1.0;
+  }
+  auto sum = std::uint64_t{0U};
+  for (std::size_t index = 0; index < left.values().size(); ++index) {
+    const auto l = static_cast<int>(left.values()[index]);
+    const auto r = static_cast<int>(right.values()[index]);
+    sum += static_cast<std::uint64_t>(std::abs(l - r));
+  }
+  return static_cast<double>(sum) /
+         (static_cast<double>(left.values().size()) * 255.0);
+}
+
+void segment_diagnostics(const lmp::config::AppConfig &config,
+                         const std::filesystem::path &input_path,
+                         const std::filesystem::path &output_dir,
+                         const std::vector<std::string> &model_paths,
+                         const std::vector<std::string> &providers) {
+  constexpr auto kMaskThreshold = std::uint8_t{180U};
+  std::filesystem::create_directories(output_dir);
+  const auto frame = read_ppm_frame(input_path);
+  write_ppm_frame(output_dir / "input.ppm", frame);
+
+  auto report_entries = std::vector<std::string>{};
+  auto baseline_masks = std::vector<std::pair<std::string, lmp::ai::SegmentationMask>>{};
+
+  for (const auto &model_path : model_paths) {
+    const auto model_name =
+        safe_artifact_name(std::filesystem::path{model_path}.stem().string());
+    auto cpu_mask = std::optional<lmp::ai::SegmentationMask>{};
+    for (const auto &provider : providers) {
+      auto engine = lmp::ai::OnnxRuntimeEngine{
+          model_path, 1U, 0.0, "1x3x256x256", "1x1x256x256", provider, true,
+          "CPU"};
+      const auto started = std::chrono::steady_clock::now();
+      const auto mask = engine.segment_person_blocking(frame);
+      const auto elapsed = std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - started)
+                               .count();
+      const auto timing = engine.last_timing();
+      const auto coverage = lmp::ai::mask_coverage(mask, kMaskThreshold);
+      const auto artifact_prefix =
+          model_name + "_" + safe_artifact_name(provider);
+      write_pgm_mask(output_dir / (artifact_prefix + "_mask.pgm"), mask);
+      write_mask_overlay(output_dir / (artifact_prefix + "_overlay.ppm"),
+                         frame, mask, kMaskThreshold);
+      auto cpu_diff = -1.0;
+      if (provider == "cpu") {
+        cpu_mask = mask;
+        baseline_masks.emplace_back(model_name, mask);
+      } else if (cpu_mask.has_value()) {
+        cpu_diff = mask_mean_absolute_difference(*cpu_mask, mask);
+      } else {
+        const auto found = std::find_if(
+            baseline_masks.begin(), baseline_masks.end(),
+            [&](const auto &entry) { return entry.first == model_name; });
+        if (found != baseline_masks.end()) {
+          cpu_diff = mask_mean_absolute_difference(found->second, mask);
+        }
+      }
+
+      report_entries.push_back(
+          "    {\n"
+          "      \"model\": \"" +
+          json_escape(model_path) +
+          "\",\n"
+          "      \"provider_requested\": \"" +
+          json_escape(provider) +
+          "\",\n"
+          "      \"provider_active\": \"" +
+          json_escape(engine.active_provider()) +
+          "\",\n"
+          "      \"provider_fallback\": " +
+          std::string{engine.provider_fallback() ? "true" : "false"} +
+          ",\n"
+          "      \"fallback_reason\": \"" +
+          json_escape(engine.provider_fallback_reason()) +
+          "\",\n"
+          "      \"available_providers\": \"" +
+          json_escape(engine.available_providers()) +
+          "\",\n"
+          "      \"model_summary\": \"" + json_escape(engine.model_summary()) +
+          "\",\n"
+          "      \"coverage\": " +
+          std::to_string(coverage) +
+          ",\n"
+          "      \"cpu_mask_mae\": " +
+          std::to_string(cpu_diff) +
+          ",\n"
+          "      \"elapsed_ms\": " +
+          std::to_string(elapsed) +
+          ",\n"
+          "      \"preprocess_ms\": " +
+          std::to_string(timing.preprocess_ms) +
+          ",\n"
+          "      \"inference_ms\": " +
+          std::to_string(timing.inference_ms) +
+          ",\n"
+          "      \"postprocess_ms\": " +
+          std::to_string(timing.postprocess_ms) +
+          ",\n"
+          "      \"mask_path\": \"" +
+          json_escape((output_dir / (artifact_prefix + "_mask.pgm")).string()) +
+          "\",\n"
+          "      \"overlay_path\": \"" +
+          json_escape((output_dir / (artifact_prefix + "_overlay.ppm")).string()) +
+          "\"\n"
+          "    }");
+    }
+  }
+
+  std::ofstream report{output_dir / "report.json"};
+  report << "{\n"
+         << "  \"input\": \"" << json_escape(input_path.string()) << "\",\n"
+         << "  \"width\": " << frame.width() << ",\n"
+         << "  \"height\": " << frame.height() << ",\n"
+         << "  \"threshold\": " << static_cast<unsigned>(kMaskThreshold)
+         << ",\n"
+         << "  \"results\": [\n";
+  for (std::size_t index = 0; index < report_entries.size(); ++index) {
+    if (index > 0U) {
+      report << ",\n";
+    }
+    report << report_entries[index];
+  }
+  report << "\n  ]\n}\n";
+
+  std::cout << "wrote " << (output_dir / "input.ppm").string() << '\n'
+            << "wrote " << (output_dir / "report.json").string() << '\n';
+  static_cast<void>(config);
+}
+
 void diagnose_frame(const lmp::config::AppConfig &config,
                     const lmp::filters::FilterPipeline &pipeline,
                     const std::filesystem::path &input_path,
@@ -594,6 +846,11 @@ int main(int argc, char **argv) {
     auto diagnose_frame_path = std::optional<std::filesystem::path>{};
     auto diagnose_output_dir =
         std::filesystem::path{"artifacts/frame-diagnostics"};
+    auto segment_diagnostics_path = std::optional<std::filesystem::path>{};
+    auto segment_output_dir =
+        std::filesystem::path{"artifacts/segmentation-diagnostics"};
+    auto segment_models = std::vector<std::string>{};
+    auto segment_providers = std::vector<std::string>{"cpu", "rocm"};
     auto stats_every = stats_interval_from_env();
     for (int index = 1; index < argc; ++index) {
       const auto option = std::string_view{argv[index]};
@@ -643,6 +900,30 @@ int main(int argc, char **argv) {
           throw std::runtime_error("--diagnose-output requires a directory");
         }
         diagnose_output_dir = std::filesystem::path{argv[index]};
+      } else if (option == "--segment-diagnostics") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--segment-diagnostics requires a PPM path");
+        }
+        segment_diagnostics_path = std::filesystem::path{argv[index]};
+      } else if (option == "--segment-output") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--segment-output requires a directory");
+        }
+        segment_output_dir = std::filesystem::path{argv[index]};
+      } else if (option == "--segment-model") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--segment-model requires a path list");
+        }
+        segment_models = split_csv(argv[index]);
+      } else if (option == "--segment-providers") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--segment-providers requires a provider list");
+        }
+        segment_providers = split_csv(argv[index]);
       } else {
         throw std::runtime_error("unknown option: " + std::string{option});
       }
@@ -657,6 +938,22 @@ int main(int argc, char **argv) {
     const auto registry = lmp::filters::create_default_registry();
     if (verify_onnx_gpu) {
       verify_onnx_provider(config, onnx_provider);
+      return 0;
+    }
+    if (segment_diagnostics_path.has_value()) {
+      if (segment_models.empty()) {
+        segment_models.push_back(config.ai.model_path);
+      }
+      if (segment_providers.empty()) {
+        segment_providers = {"cpu", "rocm"};
+      }
+      std::cout << "linux-media-pipeline " << lmp::version_string()
+                << " segment_diagnostics=true config=" << config_path
+                << " input=" << segment_diagnostics_path->string()
+                << " output_dir=" << segment_output_dir.string() << '\n';
+      segment_diagnostics(config, *segment_diagnostics_path,
+                          segment_output_dir, segment_models,
+                          segment_providers);
       return 0;
     }
     const auto pipeline =

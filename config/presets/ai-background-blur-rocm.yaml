@@ -36,9 +36,9 @@ filters:
     min_mask_coverage: 0.05
     max_mask_coverage: 0.80
     fallback_mask_mode: tracked_center
-    mask_width: 0.56
-    mask_height: 0.86
-    radius: 14
+    mask_width: 0.50
+    mask_height: 0.82
+    radius: 16
     foreground_threshold: 180
     brightness: 2
     contrast: 1.04

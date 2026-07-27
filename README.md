@@ -34,7 +34,7 @@ Fedora:
 
 ```bash
 ./scripts/install-fedora-deps.sh
-./scripts/stream.sh install-model
+./scripts/stream.sh install-model all
 ./scripts/build.sh
 ./scripts/test.sh
 ./scripts/setup-loopback.sh 20 linux-media-pipeline
@@ -45,7 +45,7 @@ macOS local validation:
 
 ```bash
 ./scripts/install-macos-deps.sh
-./scripts/stream.sh install-model
+./scripts/stream.sh install-model all
 ./scripts/build.sh
 ./scripts/test.sh
 ./build/dev/lmp --list-onnx-providers
@@ -75,6 +75,23 @@ Convert the output to PNG for quick inspection:
 ffmpeg -y -i artifacts/frame-diagnostics/rocm-preset/output.ppm \
   artifacts/frame-diagnostics/rocm-preset/output.png
 ```
+
+Compare ONNX segmentation providers on the same captured frame before using a
+GPU provider live:
+
+```bash
+./build/dev/lmp --config config/presets/ai-background-blur-rocm.yaml \
+  --segment-diagnostics artifacts/frame.ppm \
+  --segment-output artifacts/segmentation-diagnostics/frame-001 \
+  --segment-providers cpu,rocm \
+  --segment-model assets/models/mediapipe-selfie.onnx,assets/models/pphumanseg.onnx
+```
+
+The diagnostic writes `report.json`, raw `*_mask.pgm` masks, and `*_overlay.ppm`
+visual overlays. A usable GPU path should have a sane coverage value and a low
+`cpu_mask_mae` compared with the CPU mask for the same model. If ROCm coverage
+is near `0.0` or `1.0`, or `cpu_mask_mae` is large, keep that model/provider out
+of the live preset.
 
 Validate the virtual camera with a generated pattern:
 

@@ -1,15 +1,18 @@
 {
   "onnx_runtime_version": "1.22.2",
-  "provider_requested": "migraphx",
-  "provider_active": "CPUExecutionProvider",
-  "gpu_execution_verified": false,
+  "provider_requested": "rocm",
+  "provider_active": "ROCMExecutionProvider",
+  "gpu_execution_verified": true,
   "model_loaded": true,
   "inference_successful": true,
   "warmup_runs": 5,
   "measured_runs": 20,
   "successful_runs": 20,
-  "average_inference_ms": 0.00114165,
-  "p95_inference_ms": 0.001202,
-  "fallback": true,
-  "fallback_reason": "MIGraphXExecutionProvider unavailable"
+  "average_inference_ms": 17.4465,
+  "average_preprocess_ms": 12.7961,
+  "average_onnx_run_ms": 3.81655,
+  "average_postprocess_ms": 0.830657,
+  "p95_inference_ms": 17.9263,
+  "fallback": false,
+  "fallback_reason": ""
 }

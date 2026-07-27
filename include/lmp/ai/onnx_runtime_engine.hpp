@@ -25,6 +25,7 @@ public:
   [[nodiscard]] SegmentationMask
   segment_person(const frame::Frame &frame) override;
   [[nodiscard]] std::string_view model_path() const noexcept;
+  [[nodiscard]] std::string_view last_error() const noexcept;
 
 private:
   class Impl;

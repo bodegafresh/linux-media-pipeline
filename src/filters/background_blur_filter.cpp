@@ -500,7 +500,13 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     }
   }
   if (!onnx_engine_->available()) {
-    frame.metadata()["background_blur_mask"] = "onnx_unavailable_center";
+    frame.metadata()["background_blur_mask"] =
+        "onnx_unavailable_" + fallback_mask_mode_;
+    if (!onnx_error_reported_) {
+      std::cerr << "background_blur_onnx_error=unavailable message=\""
+                << onnx_engine_->last_error() << "\"\n";
+      onnx_error_reported_ = true;
+    }
     return std::nullopt;
   }
   try {

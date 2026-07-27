@@ -9,6 +9,7 @@
 #include <numeric>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #if LMP_HAS_ONNXRUNTIME
@@ -61,6 +62,22 @@ float probability_from_model_value(float value) noexcept {
   }
   return 1.0F / (1.0F + std::exp(-value));
 }
+
+using Shape = std::array<std::int64_t, 4>;
+
+std::optional<Shape> read_4d_shape(const Ort::TensorTypeAndShapeInfo &info,
+                                   const Shape &fallback) {
+  const auto rank = info.GetDimensionsCount();
+  if (rank != fallback.size()) {
+    return std::nullopt;
+  }
+  auto shape = fallback;
+  info.GetDimensions(shape.data(), shape.size());
+  for (auto &dimension : shape) {
+    dimension = dimension_or(dimension, 0);
+  }
+  return shape;
+}
 #endif
 
 } // namespace
@@ -74,24 +91,30 @@ public:
         session_options_{}, allocator_{}, input_shape_{1, 3, 256, 256} {
     inference_interval_ = std::max<std::uint32_t>(1U, inference_interval);
     mask_smoothing_ = std::clamp(mask_smoothing, 0.0, 0.95);
-    if (!std::filesystem::exists(model_path)) {
-      return;
-    }
+    try {
+      if (!std::filesystem::exists(model_path)) {
+        last_error_ = "model file does not exist";
+        return;
+      }
 
-    session_options_.SetIntraOpNumThreads(1);
-    session_options_.SetGraphOptimizationLevel(
-        GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-    session_.emplace(env_, model_path.c_str(), session_options_);
+      session_options_.SetIntraOpNumThreads(1);
+      session_options_.SetGraphOptimizationLevel(
+          GraphOptimizationLevel::ORT_DISABLE_ALL);
+      session_.emplace(env_, model_path.c_str(), session_options_);
 
-    auto input_name = session_->GetInputNameAllocated(0, allocator_);
-    auto output_name = session_->GetOutputNameAllocated(0, allocator_);
-    input_name_ = input_name.get();
-    output_name_ = output_name.get();
+      auto input_name = session_->GetInputNameAllocated(0, allocator_);
+      auto output_name = session_->GetOutputNameAllocated(0, allocator_);
+      input_name_ = input_name.get();
+      output_name_ = output_name.get();
 
-    const auto input_info =
-        session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-    const auto shape = input_info.GetShape();
-    if (shape.size() == 4U) {
+      const auto input_info =
+          session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
+      const auto maybe_shape = read_4d_shape(input_info, input_shape_);
+      if (!maybe_shape.has_value()) {
+        last_error_ = "model input must be rank 4";
+        return;
+      }
+      const auto shape = *maybe_shape;
       const auto looks_channels_last =
           dimension_or(shape[3], 3) == 3 && dimension_or(shape[1], 256) != 3;
       input_shape_[0] = dimension_or(shape[0], 1);
@@ -103,20 +126,30 @@ public:
       input_shape_[3] =
           std::min(dimension_or(shape[3], looks_channels_last ? 3 : 256),
                    kMaxModelDimension);
-    }
 
-    input_channels_last_ = input_shape_[3] == 3 && input_shape_[1] != 3;
-    const auto input_height = static_cast<std::uint32_t>(
-        input_channels_last_ ? input_shape_[1] : input_shape_[2]);
-    const auto input_width = static_cast<std::uint32_t>(
-        input_channels_last_ ? input_shape_[2] : input_shape_[3]);
-    ready_ = input_shape_[0] == 1 &&
-             ((input_channels_last_ && input_shape_[3] == 3) ||
-              (!input_channels_last_ && input_shape_[1] == 3)) &&
-             dimensions_are_sane(input_width, input_height);
+      input_channels_last_ = input_shape_[3] == 3 && input_shape_[1] != 3;
+      const auto input_height = static_cast<std::uint32_t>(
+          input_channels_last_ ? input_shape_[1] : input_shape_[2]);
+      const auto input_width = static_cast<std::uint32_t>(
+          input_channels_last_ ? input_shape_[2] : input_shape_[3]);
+      ready_ = input_shape_[0] == 1 &&
+               ((input_channels_last_ && input_shape_[3] == 3) ||
+                (!input_channels_last_ && input_shape_[1] == 3)) &&
+               dimensions_are_sane(input_width, input_height);
+      if (!ready_) {
+        last_error_ = "unsupported model input shape";
+      }
+    } catch (const std::exception &error) {
+      ready_ = false;
+      session_.reset();
+      last_error_ = error.what();
+    }
   }
 
   [[nodiscard]] bool ready() const noexcept { return ready_; }
+  [[nodiscard]] std::string_view last_error() const noexcept {
+    return last_error_;
+  }
 
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     if (!ready_ || !session_.has_value()) {
@@ -180,7 +213,8 @@ public:
     }
 
     const auto output_info = outputs.front().GetTensorTypeAndShapeInfo();
-    const auto output_shape = output_info.GetShape();
+    const auto output_shape =
+        read_4d_shape(output_info, Shape{1, 1, input_height, input_width});
     const auto *output = outputs.front().GetTensorData<float>();
     const auto output_count = output_info.GetElementCount();
     if (output == nullptr || output_count == 0U) {
@@ -192,32 +226,31 @@ public:
     auto channel_count = std::uint32_t{1U};
     auto person_channel = std::uint32_t{0U};
     auto channels_last = false;
-    if (output_shape.size() >= 2U) {
-      mask_height = static_cast<std::uint32_t>(
-          dimension_or(output_shape[output_shape.size() - 2U], input_height));
-      mask_width = static_cast<std::uint32_t>(
-          dimension_or(output_shape[output_shape.size() - 1U], input_width));
-    }
-    if (output_shape.size() == 4U) {
+    if (output_shape.has_value()) {
+      const auto shape = *output_shape;
+      mask_height =
+          static_cast<std::uint32_t>(dimension_or(shape[2], input_height));
+      mask_width =
+          static_cast<std::uint32_t>(dimension_or(shape[3], input_width));
       const auto first_channel_dim =
-          static_cast<std::uint32_t>(dimension_or(output_shape[1], 1));
+          static_cast<std::uint32_t>(dimension_or(shape[1], 1));
       const auto last_channel_dim =
-          static_cast<std::uint32_t>(dimension_or(output_shape[3], 1));
+          static_cast<std::uint32_t>(dimension_or(shape[3], 1));
       if (last_channel_dim <= 4U) {
         channel_count = last_channel_dim;
         person_channel = channel_count > 1U ? 1U : 0U;
         channels_last = true;
-        mask_height = static_cast<std::uint32_t>(dimension_or(
-            output_shape[1], static_cast<std::int64_t>(input_height)));
-        mask_width = static_cast<std::uint32_t>(dimension_or(
-            output_shape[2], static_cast<std::int64_t>(input_width)));
+        mask_height = static_cast<std::uint32_t>(
+            dimension_or(shape[1], static_cast<std::int64_t>(input_height)));
+        mask_width = static_cast<std::uint32_t>(
+            dimension_or(shape[2], static_cast<std::int64_t>(input_width)));
       } else if (first_channel_dim <= 4U) {
         channel_count = first_channel_dim;
         person_channel = channel_count > 1U ? 1U : 0U;
-        mask_height = static_cast<std::uint32_t>(dimension_or(
-            output_shape[2], static_cast<std::int64_t>(input_height)));
-        mask_width = static_cast<std::uint32_t>(dimension_or(
-            output_shape[3], static_cast<std::int64_t>(input_width)));
+        mask_height = static_cast<std::uint32_t>(
+            dimension_or(shape[2], static_cast<std::int64_t>(input_height)));
+        mask_width = static_cast<std::uint32_t>(
+            dimension_or(shape[3], static_cast<std::int64_t>(input_width)));
       }
     }
     if (!dimensions_are_sane(mask_width, mask_height)) {
@@ -273,9 +306,13 @@ private:
   double mask_smoothing_ = 0.70;
   bool input_channels_last_ = false;
   bool ready_ = false;
+  std::string last_error_;
 #else
   Impl(const std::string &, std::uint32_t, double) {}
   [[nodiscard]] bool ready() const noexcept { return false; }
+  [[nodiscard]] std::string_view last_error() const noexcept {
+    return "ONNX Runtime support is not compiled in";
+  }
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     return fallback_segment_person(frame);
   }
@@ -314,6 +351,11 @@ SegmentationMask OnnxRuntimeEngine::segment_person(const frame::Frame &frame) {
 
 std::string_view OnnxRuntimeEngine::model_path() const noexcept {
   return model_path_;
+}
+
+std::string_view OnnxRuntimeEngine::last_error() const noexcept {
+  return impl_ == nullptr ? "ONNX Runtime engine is not initialized"
+                          : impl_->last_error();
 }
 
 } // namespace lmp::ai

@@ -172,8 +172,11 @@ background_blur_mask_active=onnx
 ```
 
 If it prints `background_blur_mask_active=onnx_unavailable_center`,
+`background_blur_mask_active=onnx_unavailable_tracked_center`,
 `background_blur_mask_active=onnx_init_error_center`,
+`background_blur_mask_active=onnx_init_error_tracked_center`,
 `background_blur_mask_active=onnx_error_center`, or
+`background_blur_mask_active=onnx_error_tracked_center`, or
 `background_blur_mask_active=center`, the runtime is not using a real model yet;
 check that the model file exists, that Fedora installed `onnxruntime` and
 `onnxruntime-devel`, and that the model input/output shape is compatible.

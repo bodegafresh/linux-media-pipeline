@@ -14,6 +14,7 @@ Run with a preset:
 ```bash
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-presenter.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
 ```
 
@@ -29,8 +30,10 @@ filter_backend_active=opencl
 - `config/presets/realtime.yaml`: lowest-latency path with only identity.
 - `config/presets/clean.yaml`: low-latency `color_adjust`, using OpenCL when
   the binary and system runtime support it.
-- `config/presets/ai-presenter.yaml`: auto-framing, background blur, and
-  OpenCL color cleanup for tutorial/meeting framing.
+- `config/presets/ai-presenter.yaml`: auto-framing and OpenCL color cleanup for
+  tutorial/meeting framing.
+- `config/presets/ai-background-blur.yaml`: experimental auto-framing plus CPU
+  background blur with the smallest blur radius.
 - `config/presets/background-blur.yaml`: background blur plus light contrast.
 - `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
 

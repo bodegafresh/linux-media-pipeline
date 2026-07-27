@@ -19,6 +19,10 @@ filters:
     target_fill: 0.62
     max_zoom: 1.7
     foreground_threshold: 128
+  - type: background_blur
+    enabled: true
+    radius: 1
+    foreground_threshold: 128
   - type: color_adjust
     enabled: true
     backend: opencl

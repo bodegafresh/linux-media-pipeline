@@ -58,6 +58,7 @@ Run with a filter preset:
 ```bash
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-presenter.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/debug.yaml
 ```
@@ -72,11 +73,11 @@ filter_backend_active=opencl
 If OpenCL is not available at runtime, `color_adjust` falls back to CPU and the
 active backend line will say `filter_backend_active=cpu`.
 
-Use `config/presets/ai-presenter.yaml` when you want the camera to crop toward
-the detected person, blur the background, and apply light color cleanup. This
-currently uses the built-in deterministic segmentation fallback; production AI
-background quality requires adding an actual ONNX person-segmentation model at
-`assets/models/person-segmentation.onnx`.
+Use `config/presets/ai-presenter.yaml` for tutorial/meeting framing: it crops
+toward the detected person and applies light OpenCL color cleanup. Background
+blur is intentionally kept out of that realtime preset because it is still CPU
+bound. Use `config/presets/ai-background-blur.yaml` only when you want to test
+the experimental blur path.
 
 ## USB Camera
 

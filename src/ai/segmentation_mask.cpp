@@ -134,4 +134,19 @@ SegmentationMask refine_mask(const SegmentationMask &mask,
   return SegmentationMask{mask.width(), mask.height(), std::move(feathered)};
 }
 
+double mask_coverage(const SegmentationMask &mask,
+                     std::uint8_t threshold) noexcept {
+  if (mask.values().empty()) {
+    return 0.0;
+  }
+  auto foreground = std::size_t{0U};
+  for (const auto value : mask.values()) {
+    if (value >= threshold) {
+      ++foreground;
+    }
+  }
+  return static_cast<double>(foreground) /
+         static_cast<double>(mask.values().size());
+}
+
 } // namespace lmp::ai

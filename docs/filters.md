@@ -100,6 +100,17 @@ Provider values are `auto`, `cpu`, `migraphx`, `rocm`, and `openvino`.
 `rocm` is explicit for Fedora ONNX Runtime builds that expose
 `ROCMExecutionProvider` instead of `MIGraphXExecutionProvider`.
 
+The AI blur startup diagnostics include:
+
+```text
+segmentation_mask_coverage_raw=...
+segmentation_mask_coverage_refined=...
+```
+
+Values near `1.0` mean the model is classifying almost the whole frame as
+foreground, so little or no background blur will be visible. Values around
+`0.20` to `0.55` are usually more plausible for a seated presenter.
+
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.

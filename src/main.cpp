@@ -306,6 +306,10 @@ public:
                 "segmentation_inference_backend");
     report_once(metadata, "segmentation_inference_device",
                 "segmentation_inference_device");
+    report_once(metadata, "segmentation_mask_coverage_raw",
+                "segmentation_mask_coverage_raw");
+    report_once(metadata, "segmentation_mask_coverage_refined",
+                "segmentation_mask_coverage_refined");
     report_once(metadata, "onnx_preprocess_ms", "onnx_preprocess_ms");
     report_once(metadata, "onnx_inference_ms", "onnx_inference_ms");
     report_once(metadata, "onnx_postprocess_ms", "onnx_postprocess_ms");

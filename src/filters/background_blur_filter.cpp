@@ -624,8 +624,15 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
       std::string{onnx_engine_->openvino_device_active()};
   frame.metadata()["segmentation_inference_backend"] =
       std::string{onnx_engine_->active_provider()};
-  frame.metadata()["segmentation_inference_device"] =
-      std::string{onnx_engine_->openvino_device_active()};
+  const auto active_provider = std::string{onnx_engine_->active_provider()};
+  if (active_provider == "ROCMExecutionProvider") {
+    frame.metadata()["segmentation_inference_device"] = "ROCm";
+  } else if (active_provider == "MIGraphXExecutionProvider") {
+    frame.metadata()["segmentation_inference_device"] = "MIGraphX";
+  } else {
+    frame.metadata()["segmentation_inference_device"] =
+        std::string{onnx_engine_->openvino_device_active()};
+  }
   if (!onnx_engine_->available()) {
     frame.metadata()["background_blur_mask"] =
         "onnx_unavailable_" + fallback_mask_mode_;
@@ -638,6 +645,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   }
   try {
     auto mask = onnx_engine_->segment_person(frame);
+    frame.metadata()["segmentation_mask_coverage_raw"] =
+        std::to_string(ai::mask_coverage(mask, foreground_threshold_));
     const auto timing = onnx_engine_->last_timing();
     frame.metadata()["onnx_preprocess_ms"] =
         std::to_string(timing.preprocess_ms);
@@ -646,6 +655,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
         std::to_string(timing.postprocess_ms);
     mask = ai::refine_mask(mask, foreground_threshold_, mask_expand_,
                            mask_feather_);
+    frame.metadata()["segmentation_mask_coverage_refined"] =
+        std::to_string(ai::mask_coverage(mask, foreground_threshold_));
     frame.metadata()["background_blur_mask"] = "onnx";
     frame.metadata()["background_blur_mask_refinement"] =
         "expand:" + std::to_string(mask_expand_) +

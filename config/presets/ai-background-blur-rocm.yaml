@@ -30,12 +30,12 @@ filters:
     inference_interval: 4
     mask_smoothing: 0.35
     mask_expand: 1
-    mask_feather: 2
+    mask_feather: 3
     fallback_mask_mode: tracked_center
     mask_width: 0.34
     mask_height: 0.54
-    radius: 5
-    foreground_threshold: 118
+    radius: 11
+    foreground_threshold: 145
     brightness: 2
     contrast: 1.04
     saturation: 1.03

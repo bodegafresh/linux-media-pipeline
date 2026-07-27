@@ -366,10 +366,20 @@ int main() {
        ok;
 
   const lmp::ai::SegmentationMask explicit_mask{2U, 1U, {0U, 255U}};
+  const lmp::ai::SegmentationMask previous_mask{2U, 1U, {100U, 100U}};
+  const auto blended_mask = explicit_mask.blend_with(previous_mask, 0.5);
+  const auto thresholded_mask = lmp::ai::threshold_mask(blended_mask, 128U);
   ok = expect(explicit_mask.width() == 2U, "segmentation mask width") && ok;
   ok = expect(explicit_mask.height() == 1U, "segmentation mask height") && ok;
   ok =
       expect(explicit_mask.at(1U, 0U) == 255U, "segmentation mask value") && ok;
+  ok = expect(blended_mask.at(0U, 0U) == 50U && blended_mask.at(1U, 0U) == 178U,
+              "segmentation mask blend") &&
+       ok;
+  ok = expect(thresholded_mask.at(0U, 0U) == 0U &&
+                  thresholded_mask.at(1U, 0U) == 255U,
+              "segmentation mask threshold") &&
+       ok;
 
   const lmp::ai::OnnxRuntimeEngine onnx{"model.onnx"};
   auto segmentation_frame =

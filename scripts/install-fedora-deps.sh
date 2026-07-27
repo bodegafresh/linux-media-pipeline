@@ -13,6 +13,8 @@ sudo dnf install -y \
   v4l-utils \
   ffmpeg \
   ffmpeg-devel \
+  onnxruntime \
+  onnxruntime-devel \
   OpenCL-ICD-Loader-devel \
   opencl-headers \
   vulkan-headers \

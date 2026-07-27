@@ -43,12 +43,27 @@ endif()
 
 set(LMP_HAS_ONNXRUNTIME OFF)
 if(LMP_ENABLE_ONNXRUNTIME)
-  find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h)
-  find_library(ONNXRUNTIME_LIBRARY onnxruntime)
-  if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(ONNXRUNTIME QUIET IMPORTED_TARGET libonnxruntime)
+  endif()
+  if(ONNXRUNTIME_FOUND)
     set(LMP_HAS_ONNXRUNTIME ON)
+  else()
+    find_path(ONNXRUNTIME_INCLUDE_DIR
+      NAMES onnxruntime_cxx_api.h
+      PATH_SUFFIXES
+        onnxruntime
+        onnxruntime/core/session
+    )
+    find_library(ONNXRUNTIME_LIBRARY onnxruntime)
+    if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
+      set(LMP_HAS_ONNXRUNTIME ON)
+    endif()
   endif()
 endif()
+message(STATUS "LMP_HAS_FFMPEG=${LMP_HAS_FFMPEG}")
+message(STATUS "LMP_HAS_OPENCL=${LMP_HAS_OPENCL}")
+message(STATUS "LMP_HAS_ONNXRUNTIME=${LMP_HAS_ONNXRUNTIME}")
 
 add_library(lmp_core
   src/ai/onnx_runtime_engine.cpp
@@ -109,8 +124,12 @@ if(LMP_HAS_OPENCL)
   target_link_libraries(lmp_core PUBLIC OpenCL::OpenCL)
 endif()
 if(LMP_HAS_ONNXRUNTIME)
-  target_include_directories(lmp_core SYSTEM PUBLIC "${ONNXRUNTIME_INCLUDE_DIR}")
-  target_link_libraries(lmp_core PUBLIC "${ONNXRUNTIME_LIBRARY}")
+  if(TARGET PkgConfig::ONNXRUNTIME)
+    target_link_libraries(lmp_core PUBLIC PkgConfig::ONNXRUNTIME)
+  else()
+    target_include_directories(lmp_core SYSTEM PUBLIC "${ONNXRUNTIME_INCLUDE_DIR}")
+    target_link_libraries(lmp_core PUBLIC "${ONNXRUNTIME_LIBRARY}")
+  endif()
 endif()
 lmp_apply_compiler_options(lmp_core)
 

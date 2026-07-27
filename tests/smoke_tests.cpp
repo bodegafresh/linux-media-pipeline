@@ -2,6 +2,7 @@
 #include "lmp/ai/segmentation_mask.hpp"
 #include "lmp/capture/gopro_udp_source.hpp"
 #include "lmp/config/config_loader.hpp"
+#include "lmp/filters/auto_frame_filter.hpp"
 #include "lmp/filters/background_blur_filter.hpp"
 #include "lmp/filters/box_blur_filter.hpp"
 #include "lmp/filters/brightness_filter.hpp"
@@ -178,7 +179,8 @@ int main() {
        ok;
   ok = expect(registry.contains("color_adjust"), "color adjust registered") &&
        ok;
-  ok = expect(registry.size() == 26U, "default registry size") && ok;
+  ok = expect(registry.contains("auto_frame"), "auto frame registered") && ok;
+  ok = expect(registry.size() == 27U, "default registry size") && ok;
   ok = expect(pipeline.size() == 1U, "identity pipeline size") && ok;
   ok = expect(before == after, "identity keeps frame bytes unchanged") && ok;
   ok = expect(frame.metadata().at("source") == "test", "frame metadata") && ok;
@@ -387,6 +389,19 @@ int main() {
                   std::vector<std::uint8_t>{85U, 85U, 85U, 255U, 255U, 255U,
                                             145U, 145U, 145U},
               "background blur preserves foreground") &&
+       ok;
+
+  auto auto_frame = make_rgb_frame(
+      6U, 4U,
+      {0U,   0U,   0U,   10U,  0U,   0U,   20U,  0U,   0U,   30U,  0U,   0U,
+       40U,  0U,   0U,   50U,  0U,   0U,   0U,   10U,  0U,   10U,  10U,  0U,
+       20U,  10U,  0U,   30U,  10U,  0U,   240U, 240U, 240U, 250U, 250U, 250U,
+       0U,   20U,  0U,   10U,  20U,  0U,   20U,  20U,  0U,   30U,  20U,  0U,
+       240U, 240U, 240U, 250U, 250U, 250U, 0U,   30U,  0U,   10U,  30U,  0U,
+       20U,  30U,  0U,   30U,  30U,  0U,   40U,  30U,  0U,   50U,  30U,  0U});
+  lmp::filters::AutoFrameFilter{0.8, 2.0, 128U}.process(auto_frame);
+  ok = expect(auto_frame.metadata().at("auto_frame") == "2,0,4,3",
+              "auto frame metadata") &&
        ok;
 
   auto owned_buffer = lmp::gpu::GpuBuffer::allocate_host(8U);

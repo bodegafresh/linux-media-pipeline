@@ -13,6 +13,7 @@ Run with a preset:
 
 ```bash
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-presenter.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
 ```
 
@@ -28,6 +29,8 @@ filter_backend_active=opencl
 - `config/presets/realtime.yaml`: lowest-latency path with only identity.
 - `config/presets/clean.yaml`: low-latency `color_adjust`, using OpenCL when
   the binary and system runtime support it.
+- `config/presets/ai-presenter.yaml`: auto-framing, background blur, and
+  OpenCL color cleanup for tutorial/meeting framing.
 - `config/presets/background-blur.yaml`: background blur plus light contrast.
 - `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
 
@@ -44,8 +47,19 @@ filter_backend_active=opencl
 ```
 
 If it prints `filter_backend_active=cpu`, the filter fell back because OpenCL was
-not compiled in or no usable OpenCL device was available. `background_blur`,
-`sharpen`, overlays, and histogram still run on CPU.
+not compiled in or no usable OpenCL device was available. `auto_frame`,
+`background_blur`, `sharpen`, overlays, and histogram still run on CPU.
+
+`auto_frame` crops toward the detected foreground and scales back to the output
+resolution. Useful knobs:
+
+```yaml
+- type: auto_frame
+  enabled: true
+  target_fill: 0.62
+  max_zoom: 1.7
+  foreground_threshold: 128
+```
 
 ## Notes
 

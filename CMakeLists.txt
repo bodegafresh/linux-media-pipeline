@@ -46,6 +46,7 @@ add_library(lmp_core
   src/capture/gopro_udp_source.cpp
   src/config/config_loader.cpp
   src/decoder/ffmpeg_decoder.cpp
+  src/filters/auto_frame_filter.cpp
   src/filters/background_blur_filter.cpp
   src/filters/box_blur_filter.cpp
   src/filters/brightness_filter.cpp

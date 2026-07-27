@@ -136,8 +136,21 @@ The code is organized around replaceable adapters:
 - Frame: project-owned `lmp::frame::Frame`.
 - Filters: independent `IVideoFilter` implementations loaded from YAML.
 - GPU: OpenCL and Vulkan backend contracts.
-- AI: ONNX Runtime adapter contract and segmentation mask model.
+- AI: optional ONNX Runtime segmentation with deterministic fallback.
 - Output: V4L2 virtual camera.
+
+## AI Segmentation
+
+If ONNX Runtime headers and library are available at configure time, the build
+enables real ONNX segmentation automatically. Put a person-segmentation model at:
+
+```text
+assets/models/person-segmentation.onnx
+```
+
+The expected model shape is a common segmentation layout: RGB float input in
+`1x3xHxW` format and a mask-like float output. If ONNX Runtime or the model is
+missing, the pipeline keeps running with the deterministic fallback.
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
 [docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).

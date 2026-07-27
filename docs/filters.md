@@ -76,6 +76,7 @@ resolution. Useful knobs:
 
 ## Notes
 
-`background_blur` currently uses the project's deterministic segmentation fallback.
-It is useful for validating the processing path, but production-quality person
-segmentation still requires wiring a real ONNX Runtime model.
+`background_blur` can use ONNX Runtime when the project is built with the
+ONNX Runtime headers/library and the configured model exists at
+`assets/models/person-segmentation.onnx`. Without that, it keeps using the
+deterministic fallback so streaming still works.

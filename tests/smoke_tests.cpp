@@ -376,7 +376,8 @@ int main() {
       make_rgb_frame(2U, 1U, {10U, 10U, 10U, 240U, 240U, 240U});
   const auto inferred_mask = onnx.segment_person(segmentation_frame);
   ok = expect(onnx.name() == "onnxruntime", "onnx engine name") && ok;
-  ok = expect(onnx.available(), "onnx engine availability") && ok;
+  ok =
+      expect(!onnx.available(), "onnx engine availability without model") && ok;
   ok =
       expect(inferred_mask.at(0U, 0U) == 0U && inferred_mask.at(1U, 0U) == 255U,
              "onnx fallback segmentation") &&

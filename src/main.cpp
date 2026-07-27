@@ -318,6 +318,8 @@ public:
                 "segmentation_mask_inverted");
     report_once(metadata, "segmentation_mask_coverage_raw",
                 "segmentation_mask_coverage_raw");
+    report_once(metadata, "segmentation_mask_foreground_threshold",
+                "segmentation_mask_foreground_threshold");
     report_once(metadata, "segmentation_mask_largest_component",
                 "segmentation_mask_largest_component");
     report_once(metadata, "segmentation_mask_coverage_component",
@@ -335,6 +337,7 @@ public:
                 "background_processing_backend");
     report_once(metadata, "background_processing_device",
                 "background_processing_device");
+    report_once(metadata, "background_blur_radius", "background_blur_radius");
   }
 
 private:

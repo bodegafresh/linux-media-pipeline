@@ -725,6 +725,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     }
     frame.metadata()["segmentation_mask_coverage_raw"] =
         std::to_string(ai::mask_coverage(mask, foreground_threshold_));
+    frame.metadata()["segmentation_mask_foreground_threshold"] =
+        std::to_string(foreground_threshold_);
     if (keep_largest_component_) {
       mask = ai::largest_component_mask(mask, foreground_threshold_);
       frame.metadata()["segmentation_mask_largest_component"] = "true";
@@ -792,6 +794,7 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
 }
 
 void BackgroundBlurFilter::process(frame::Frame &frame) const {
+  frame.metadata()["background_blur_radius"] = std::to_string(radius_);
   if (backend_ == "opencl" && process_opencl(frame)) {
     frame.metadata()["background_blur_backend"] = "opencl";
     frame.metadata()["background_processing_backend"] = "opencl";
@@ -1019,7 +1022,8 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   clReleaseMemObject(mask_buffer);
   clReleaseMemObject(input);
   if (error == CL_SUCCESS) {
-    if (mask.has_value()) {
+    if (mask.has_value() &&
+        !frame.metadata().contains("background_blur_mask")) {
       frame.metadata()["background_blur_mask"] = "onnx";
     } else if (!frame.metadata().contains("background_blur_mask")) {
       frame.metadata()["background_blur_mask"] = active_mask_mode;

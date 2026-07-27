@@ -38,7 +38,7 @@ filters:
     fallback_mask_mode: luminance
     mask_width: 0.78
     mask_height: 1.08
-    radius: 7
+    radius: 12
     foreground_threshold: 180
     brightness: 2
     contrast: 1.04

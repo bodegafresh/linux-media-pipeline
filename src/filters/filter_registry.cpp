@@ -221,7 +221,8 @@ FilterRegistry create_default_registry() {
             detail::bool_parameter(config, "invert_mask", false),
             detail::bool_parameter(config, "keep_largest_component", false),
             detail::double_parameter(config, "min_mask_coverage", 0.02),
-            detail::double_parameter(config, "max_mask_coverage", 0.85));
+            detail::double_parameter(config, "max_mask_coverage", 0.85),
+            detail::double_parameter(config, "hint_y_offset", 0.0));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

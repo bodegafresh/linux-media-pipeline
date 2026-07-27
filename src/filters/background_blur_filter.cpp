@@ -327,7 +327,7 @@ OpenClBackgroundBlurResources &opencl_background_resources() {
 std::optional<ai::SegmentationMask>
 ellipse_mask_from_centroid(const ai::SegmentationMask &mask,
                            std::uint8_t threshold, double width_fraction,
-                           double height_fraction) {
+                           double height_fraction, double y_offset_fraction) {
   auto weight_sum = double{0.0};
   auto weighted_x = double{0.0};
   auto weighted_y = double{0.0};
@@ -348,7 +348,9 @@ ellipse_mask_from_centroid(const ai::SegmentationMask &mask,
   }
 
   const auto center_x = weighted_x / weight_sum;
-  const auto center_y = weighted_y / weight_sum;
+  const auto center_y =
+      (weighted_y / weight_sum) +
+      (y_offset_fraction * static_cast<double>(mask.height()));
   const auto radius_x =
       std::max(1.0, width_fraction * static_cast<double>(mask.width()) * 0.5);
   const auto radius_y =
@@ -541,7 +543,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
           radius, foreground_threshold, std::move(backend), brightness,
           contrast, saturation, false, 1.0, 1.0, "luminance", 0.28, 0.42,
           "assets/models/person-segmentation.onnx", 3U, 0.70, "tracked_center",
-          "", "", "auto", true, "CPU", 1U, 3U, false, false, 0.02, 0.85) {}
+          "", "", "auto", true, "CPU", 1U, 3U, false, false, 0.02, 0.85, 0.0) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -554,7 +556,7 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     bool allow_provider_fallback, std::string openvino_device,
     std::uint32_t mask_expand, std::uint32_t mask_feather, bool invert_mask,
     bool keep_largest_component, double min_mask_coverage,
-    double max_mask_coverage)
+    double max_mask_coverage, double hint_y_offset)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -571,7 +573,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       mask_feather_(mask_feather), invert_mask_(invert_mask),
       keep_largest_component_(keep_largest_component),
       min_mask_coverage_(min_mask_coverage),
-      max_mask_coverage_(max_mask_coverage), onnx_error_reported_(false) {
+      max_mask_coverage_(max_mask_coverage), hint_y_offset_(hint_y_offset),
+      onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -706,8 +709,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     }
     frame.metadata()["segmentation_mask_coverage_raw"] =
         std::to_string(ai::mask_coverage(mask, foreground_threshold_));
-    auto hint_mask = ellipse_mask_from_centroid(mask, foreground_threshold_,
-                                                mask_width_, mask_height_);
+    auto hint_mask = ellipse_mask_from_centroid(
+        mask, foreground_threshold_, mask_width_, mask_height_, hint_y_offset_);
     if (keep_largest_component_) {
       mask = ai::largest_component_mask(mask, foreground_threshold_);
       frame.metadata()["segmentation_mask_largest_component"] = "true";

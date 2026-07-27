@@ -14,5 +14,9 @@ if [[ -z "${ONNXRUNTIME_ROOT:-}" ]] && command -v rpm >/dev/null 2>&1; then
   fi
 fi
 
-cmake --preset dev "${cmake_args[@]}"
+if [[ "${#cmake_args[@]}" -gt 0 ]]; then
+  cmake --preset dev "${cmake_args[@]}"
+else
+  cmake --preset dev
+fi
 cmake --build --preset dev

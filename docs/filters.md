@@ -107,6 +107,11 @@ segmentation_mask_coverage_raw=...
 segmentation_mask_coverage_refined=...
 ```
 
+ONNX masks are kept as grayscale probability mattes before thresholding,
+expansion, and feathering. This is important for presenter use: a hard binary
+mask tends to fragment hands, hair, and shoulders, while the probability matte
+lets the blur keep a softer body-shaped foreground.
+
 Values near `1.0` mean the model is classifying almost the whole frame as
 foreground, so little or no background blur will be visible. Values around
 `0.20` to `0.55` are usually more plausible for a seated presenter.
@@ -146,6 +151,24 @@ AI-guided ellipse instead. The stream then prints:
 background_blur_mask_active=onnx_hint_ellipse
 segmentation_mask_hint_coverage=...
 ```
+
+Use `hint_y_offset` to move that protected ellipse vertically. Negative values
+move it upward, which helps protect the head/shoulders when the noisy mask center
+lands too low.
+
+For the ROCm preset, the intended path is body segmentation first and the
+ellipse only as a fallback. A healthy run should normally show:
+
+```text
+background_blur_mask_active=onnx
+segmentation_inference_backend=ROCMExecutionProvider
+background_processing_backend=opencl
+```
+
+If `background_blur_mask_active=onnx_hint_ellipse` or
+`onnx_rejected_tracked_center` appears repeatedly, the model output is still
+being rejected by coverage checks and the segmentation tuning needs another
+pass.
 
 For recording or streaming today, prefer the stable preset:
 

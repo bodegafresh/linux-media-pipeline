@@ -71,6 +71,13 @@ float probability_from_model_value(float value) noexcept {
   return 1.0F / (1.0F + std::exp(-value));
 }
 
+std::uint8_t probability_to_mask_value(float value) noexcept {
+  const auto probability = std::clamp(value, 0.0F, 1.0F);
+  const auto scaled =
+      static_cast<int>(std::round(probability * static_cast<float>(255U)));
+  return static_cast<std::uint8_t>(std::clamp(scaled, 0, 255));
+}
+
 struct TensorShape {
   std::array<std::int64_t, 8> dimensions{};
   std::size_t rank = 0;
@@ -599,8 +606,7 @@ private:
         if (output_index >= output_count) {
           return fallback_segment_person(frame);
         }
-        const auto value = probability_from_model_value(output[output_index]);
-        mask.push_back(value >= 0.5F ? 255U : 0U);
+        mask.push_back(probability_to_mask_value(output[output_index]));
       }
     }
     auto current = SegmentationMask{mask_width, mask_height, std::move(mask)};

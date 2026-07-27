@@ -216,6 +216,7 @@ int main(int argc, char **argv) {
                 << plan << "\"\n";
       bool reported_filter_backend = false;
       bool reported_background_blur_backend = false;
+      bool reported_background_blur_mask = false;
       while (true) {
         auto frame = decoder.read_frame();
         pipeline.process(frame);
@@ -233,6 +234,14 @@ int main(int argc, char **argv) {
             std::cout << "background_blur_backend_active=" << found->second
                       << '\n';
             reported_background_blur_backend = true;
+          }
+        }
+        if (!reported_background_blur_mask) {
+          if (const auto found = frame.metadata().find("background_blur_mask");
+              found != frame.metadata().end()) {
+            std::cout << "background_blur_mask_active=" << found->second
+                      << '\n';
+            reported_background_blur_mask = true;
           }
         }
         output.write(frame);
@@ -258,6 +267,7 @@ int main(int argc, char **argv) {
                 << plan << "\"\n";
       bool reported_filter_backend = false;
       bool reported_background_blur_backend = false;
+      bool reported_background_blur_mask = false;
       for (std::uint32_t frame_index = 0;; ++frame_index) {
         auto frame = make_test_pattern(width, height, frame_index);
         pipeline.process(frame);
@@ -275,6 +285,14 @@ int main(int argc, char **argv) {
             std::cout << "background_blur_backend_active=" << found->second
                       << '\n';
             reported_background_blur_backend = true;
+          }
+        }
+        if (!reported_background_blur_mask) {
+          if (const auto found = frame.metadata().find("background_blur_mask");
+              found != frame.metadata().end()) {
+            std::cout << "background_blur_mask_active=" << found->second
+                      << '\n';
+            reported_background_blur_mask = true;
           }
         }
         output.write(frame);

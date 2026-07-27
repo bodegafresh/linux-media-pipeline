@@ -58,13 +58,31 @@ To verify filters visually:
 
 The terminal prints `filters_active=[...]` when filters are enabled.
 
+For the real AI background blur and auto-framing path, use:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+```
+
+Expected runtime lines when the model is active:
+
+```text
+background_blur_backend_active=opencl
+background_blur_mask_active=onnx
+```
+
+If the mask line says `onnx_unavailable_center`, OBS will still receive video,
+but the app is using the centered fallback because
+`assets/models/person-segmentation.onnx` is missing or incompatible.
+
 ## OBS Setup
 
 1. Add a Video Capture Device source.
 2. Select `linux-media-pipeline` or `/dev/video20`.
 3. Match the same resolution and FPS as the pipeline output.
 
-## Remaining Live Video Work
+## Other Applications
 
-The project can validate the GoPro UDP listener, stream a V4L2 test pattern, and
-stream decoded GoPro frames through `FilterPipeline` into `/dev/video20`.
+The output is a normal V4L2 camera. Google Meet, Zoom, Chrome, and other Linux
+apps should use the same `/dev/video20` source after the stream command is
+running.

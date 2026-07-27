@@ -76,8 +76,10 @@ active backend line will say `filter_backend_active=cpu`.
 Use `config/presets/ai-presenter.yaml` for tutorial/meeting framing: it crops
 toward the detected person and applies light OpenCL color cleanup. Use
 `config/presets/ai-background-blur.yaml` when you also want background blur; that
-preset fuses blur and color cleanup in the OpenCL blur filter and falls back to
-CPU if no GPU runtime is available.
+preset uses an ONNX person-segmentation mask when
+`assets/models/person-segmentation.onnx` exists, fuses blur, auto-framing, and
+color cleanup in the OpenCL blur filter, and falls back to a centered mask if the
+model is missing.
 
 ## USB Camera
 
@@ -142,15 +144,36 @@ The code is organized around replaceable adapters:
 ## AI Segmentation
 
 If ONNX Runtime headers and library are available at configure time, the build
-enables real ONNX segmentation automatically. Put a person-segmentation model at:
+enables ONNX Runtime automatically. ONNX Runtime is the inference engine; the
+actual AI model is the `.onnx` file. Put a person-segmentation model at:
 
 ```text
 assets/models/person-segmentation.onnx
 ```
 
-The expected model shape is a common segmentation layout: RGB float input in
-`1x3xHxW` format and a mask-like float output. If ONNX Runtime or the model is
-missing, the pipeline keeps running with the deterministic fallback.
+The expected input is RGB float in `1x3xHxW` format. The output can be a single
+mask or a common two-channel segmentation tensor such as `1x2xHxW` or `1xHxWx2`;
+when two channels exist, the person channel is used. If ONNX Runtime or the
+model is missing, the pipeline keeps running with the deterministic fallback.
+
+Run the real AI background blur preset with:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+```
+
+The terminal should show:
+
+```text
+LMP_HAS_ONNXRUNTIME=ON
+background_blur_backend_active=opencl
+background_blur_mask_active=onnx
+```
+
+If it prints `background_blur_mask_active=onnx_unavailable_center` or
+`background_blur_mask_active=center`, the runtime is not using a real model yet;
+check that the model file exists and that Fedora installed `onnxruntime` and
+`onnxruntime-devel`.
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
 [docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).

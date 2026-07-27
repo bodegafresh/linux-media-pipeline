@@ -59,6 +59,17 @@ OpenCL was not compiled in or no usable OpenCL device was available.
 background_blur_backend_active=opencl
 ```
 
+For the AI preset it also reports the mask source:
+
+```text
+background_blur_mask_active=onnx
+```
+
+That line means `background_blur` is using the real
+`assets/models/person-segmentation.onnx` model through ONNX Runtime. If it says
+`onnx_unavailable_center` or `center`, the stream is still usable, but it is
+using the fixed fallback mask instead of true person segmentation.
+
 `auto_frame`, `sharpen`, overlays, and histogram still run on CPU.
 
 `auto_frame` crops toward the detected foreground and scales back to the output
@@ -78,5 +89,8 @@ resolution. Useful knobs:
 
 `background_blur` can use ONNX Runtime when the project is built with the
 ONNX Runtime headers/library and the configured model exists at
-`assets/models/person-segmentation.onnx`. Without that, it keeps using the
-deterministic fallback so streaming still works.
+`assets/models/person-segmentation.onnx`. ONNX Runtime is the engine; the `.onnx`
+file is the model. The model should accept RGB float input in `1x3xHxW` layout
+and return either a single mask or a common two-channel segmentation output such
+as `1x2xHxW` or `1xHxWx2`. Without that, it keeps using the deterministic
+fallback so streaming still works.

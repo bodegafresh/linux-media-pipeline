@@ -204,7 +204,9 @@ FilterRegistry create_default_registry() {
             detail::double_parameter(config, "max_zoom", 1.8),
             detail::string_parameter(config, "mask_mode", "luminance"),
             detail::double_parameter(config, "mask_width", 0.28),
-            detail::double_parameter(config, "mask_height", 0.42));
+            detail::double_parameter(config, "mask_height", 0.42),
+            detail::string_parameter(config, "model_path",
+                                     "assets/models/person-segmentation.onnx"));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

@@ -33,6 +33,7 @@ const char *background_blur_kernel_source() {
   return R"CLC(
 __kernel void background_blur(__global const uchar *input,
                               __global uchar *output,
+                              __global const uchar *mask,
                               const uint width,
                               const uint height,
                               const uint stride,
@@ -50,6 +51,8 @@ __kernel void background_blur(__global const uchar *input,
                               const uint crop_width,
                               const uint crop_height,
                               const uint mask_mode,
+                              const uint mask_width_px,
+                              const uint mask_height_px,
                               const float mask_width,
                               const float mask_height) {
   const uint x = get_global_id(0);
@@ -69,7 +72,12 @@ __kernel void background_blur(__global const uchar *input,
   const float nx = (((float)x + 0.5f) / (float)width - 0.5f) / mask_width;
   const float ny = (((float)y + 0.5f) / (float)height - 0.48f) / mask_height;
   const bool center_foreground = ((nx * nx) + (ny * ny)) <= 1.0f;
-  const bool foreground = mask_mode == 1U ? center_foreground : luma >= foreground_threshold;
+  const uint mask_x = min((source_x * mask_width_px) / width, mask_width_px - 1U);
+  const uint mask_y = min((source_y * mask_height_px) / height, mask_height_px - 1U);
+  const uchar mask_value = mask[(mask_y * mask_width_px) + mask_x];
+  const bool foreground = mask_mode == 2U ? mask_value >= foreground_threshold
+                          : mask_mode == 1U ? center_foreground
+                          : luma >= foreground_threshold;
 
   float out_red = red;
   float out_green = green;
@@ -318,6 +326,28 @@ std::optional<Bounds> foreground_bounds(std::span<const std::uint8_t> bytes,
   return bounds;
 }
 
+std::optional<Bounds> mask_bounds(const ai::SegmentationMask &mask,
+                                  std::uint8_t threshold) {
+  auto bounds = Bounds{mask.width(), mask.height(), 0U, 0U};
+  bool found = false;
+  for (std::uint32_t y = 0; y < mask.height(); ++y) {
+    for (std::uint32_t x = 0; x < mask.width(); ++x) {
+      if (mask.at(x, y) < threshold) {
+        continue;
+      }
+      bounds.min_x = std::min(bounds.min_x, x);
+      bounds.min_y = std::min(bounds.min_y, y);
+      bounds.max_x = std::max(bounds.max_x, x);
+      bounds.max_y = std::max(bounds.max_y, y);
+      found = true;
+    }
+  }
+  if (!found) {
+    return std::nullopt;
+  }
+  return bounds;
+}
+
 Crop crop_from_bounds(Bounds bounds, std::uint32_t frame_width,
                       std::uint32_t frame_height, double target_fill,
                       double max_zoom) {
@@ -358,6 +388,9 @@ Crop crop_from_bounds(Bounds bounds, std::uint32_t frame_width,
 }
 
 cl_uint opencl_mask_mode(std::string_view mode) {
+  if (mode == "onnx") {
+    return 2U;
+  }
   return mode == "center" ? 1U : 0U;
 }
 #endif
@@ -381,19 +414,20 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                                            double saturation)
     : BackgroundBlurFilter(radius, foreground_threshold, std::move(backend),
                            brightness, contrast, saturation, false, 1.0, 1.0,
-                           "luminance", 0.28, 0.42) {}
+                           "luminance", 0.28, 0.42,
+                           "assets/models/person-segmentation.onnx") {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
     std::string backend, double brightness, double contrast, double saturation,
     bool auto_frame, double target_fill, double max_zoom, std::string mask_mode,
-    double mask_width, double mask_height)
+    double mask_width, double mask_height, std::string model_path)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
       target_fill_(target_fill), max_zoom_(max_zoom),
       mask_mode_(std::move(mask_mode)), mask_width_(mask_width),
-      mask_height_(mask_height) {
+      mask_height_(mask_height), model_path_(std::move(model_path)) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -410,14 +444,31 @@ BackgroundBlurFilter::BackgroundBlurFilter(
   if (max_zoom_ < 1.0) {
     throw std::invalid_argument("background_blur max_zoom must be >= 1");
   }
-  if (mask_mode_ != "luminance" && mask_mode_ != "center") {
+  if (mask_mode_ != "luminance" && mask_mode_ != "center" &&
+      mask_mode_ != "onnx") {
     throw std::invalid_argument(
-        "background_blur mask_mode must be luminance or center");
+        "background_blur mask_mode must be luminance, center, or onnx");
   }
   if (mask_width_ <= 0.0 || mask_height_ <= 0.0) {
     throw std::invalid_argument(
         "background_blur mask dimensions must be positive");
   }
+}
+
+std::optional<ai::SegmentationMask>
+BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
+  if (mask_mode_ != "onnx") {
+    return std::nullopt;
+  }
+  if (onnx_engine_ == nullptr) {
+    onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(model_path_);
+  }
+  if (!onnx_engine_->available()) {
+    frame.metadata()["background_blur_mask"] = "onnx_unavailable_center";
+    return std::nullopt;
+  }
+  frame.metadata()["background_blur_mask"] = "onnx";
+  return onnx_engine_->segment_person(frame);
 }
 
 void BackgroundBlurFilter::process(frame::Frame &frame) const {
@@ -434,8 +485,14 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
     frame.metadata()["background_blur_auto_frame"] = "opencl_required";
   }
   const auto original = detail::read_packed_rgb(frame);
-  ai::OnnxRuntimeEngine fallback_engine{""};
-  const auto mask = fallback_engine.segment_person(frame);
+  auto mask = person_mask(frame);
+  if (!mask.has_value()) {
+    ai::OnnxRuntimeEngine fallback_engine{""};
+    mask = fallback_engine.segment_person(frame);
+    frame.metadata()["background_blur_mask"] = mask_mode_ == "center"
+                                                   ? "center_cpu_fallback"
+                                                   : "luminance_cpu_fallback";
+  }
 
   detail::apply_box_blur(frame, radius_);
   const auto blurred = detail::read_packed_rgb(frame);
@@ -445,8 +502,8 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
   for (std::uint32_t y = 0; y < frame.height(); ++y) {
     for (std::uint32_t x = 0; x < frame.width(); ++x) {
       const auto index = detail::pixel_index(x, y, frame.width());
-      auto pixel = mask.at(x, y) >= foreground_threshold_ ? original[index]
-                                                          : blurred[index];
+      auto pixel = mask->at(x, y) >= foreground_threshold_ ? original[index]
+                                                           : blurred[index];
       auto red = ((pixel.red - 128.0) * contrast_) + 128.0 + brightness_;
       auto green = ((pixel.green - 128.0) * contrast_) + 128.0 + brightness_;
       auto blue = ((pixel.blue - 128.0) * contrast_) + 128.0 + brightness_;
@@ -483,6 +540,20 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
     return false;
   }
 
+  auto mask = person_mask(frame);
+  std::vector<std::uint8_t> fallback_mask{0U};
+  auto mask_values = std::span<const std::uint8_t>{fallback_mask};
+  auto mask_width_px = std::uint32_t{1U};
+  auto mask_height_px = std::uint32_t{1U};
+  auto active_mask_mode = mask_mode_;
+  if (mask.has_value()) {
+    mask_values = mask->values();
+    mask_width_px = mask->width();
+    mask_height_px = mask->height();
+  } else if (mask_mode_ == "onnx") {
+    active_mask_mode = "center";
+  }
+
   cl_int error = CL_SUCCESS;
   cl_mem input = clCreateBuffer(resources.context(),
                                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
@@ -493,6 +564,15 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   cl_mem output = clCreateBuffer(resources.context(), CL_MEM_WRITE_ONLY,
                                  bytes.size(), nullptr, &error);
   if (error != CL_SUCCESS || output == nullptr) {
+    clReleaseMemObject(input);
+    return false;
+  }
+  cl_mem mask_buffer = clCreateBuffer(
+      resources.context(), CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+      mask_values.size(), const_cast<std::uint8_t *>(mask_values.data()),
+      &error);
+  if (error != CL_SUCCESS || mask_buffer == nullptr) {
+    clReleaseMemObject(output);
     clReleaseMemObject(input);
     return false;
   }
@@ -508,8 +588,10 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   auto crop = Crop{0U, 0U, frame.width(), frame.height()};
   if (auto_frame_) {
     const auto bounds =
-        foreground_bounds(bytes, frame.format(), strides, frame.width(),
-                          frame.height(), foreground_threshold_);
+        mask.has_value()
+            ? mask_bounds(*mask, foreground_threshold_)
+            : foreground_bounds(bytes, frame.format(), strides, frame.width(),
+                                frame.height(), foreground_threshold_);
     if (bounds.has_value()) {
       crop = crop_from_bounds(*bounds, frame.width(), frame.height(),
                               target_fill_, max_zoom_);
@@ -519,32 +601,37 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto crop_y = static_cast<cl_uint>(crop.y);
   const auto crop_width = static_cast<cl_uint>(crop.width);
   const auto crop_height = static_cast<cl_uint>(crop.height);
-  const auto mask_mode = opencl_mask_mode(mask_mode_);
+  const auto mask_mode = opencl_mask_mode(active_mask_mode);
+  const auto mask_width_arg = static_cast<cl_uint>(mask_width_px);
+  const auto mask_height_arg = static_cast<cl_uint>(mask_height_px);
   const auto mask_width = static_cast<float>(mask_width_);
   const auto mask_height = static_cast<float>(mask_height_);
   auto *kernel = resources.kernel();
 
   error = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
   error |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &output);
-  error |= clSetKernelArg(kernel, 2, sizeof(cl_uint), &width);
-  error |= clSetKernelArg(kernel, 3, sizeof(cl_uint), &height);
-  error |= clSetKernelArg(kernel, 4, sizeof(cl_uint), &stride);
-  error |= clSetKernelArg(kernel, 5, sizeof(cl_uint), &layout.pixel_size);
-  error |= clSetKernelArg(kernel, 6, sizeof(cl_uint), &layout.red_offset);
-  error |= clSetKernelArg(kernel, 7, sizeof(cl_uint), &layout.green_offset);
-  error |= clSetKernelArg(kernel, 8, sizeof(cl_uint), &layout.blue_offset);
-  error |= clSetKernelArg(kernel, 9, sizeof(cl_uint), &radius);
-  error |= clSetKernelArg(kernel, 10, sizeof(cl_uchar), &threshold);
-  error |= clSetKernelArg(kernel, 11, sizeof(float), &brightness);
-  error |= clSetKernelArg(kernel, 12, sizeof(float), &contrast);
-  error |= clSetKernelArg(kernel, 13, sizeof(float), &saturation);
-  error |= clSetKernelArg(kernel, 14, sizeof(cl_uint), &crop_x);
-  error |= clSetKernelArg(kernel, 15, sizeof(cl_uint), &crop_y);
-  error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &crop_width);
-  error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &crop_height);
-  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &mask_mode);
-  error |= clSetKernelArg(kernel, 19, sizeof(float), &mask_width);
-  error |= clSetKernelArg(kernel, 20, sizeof(float), &mask_height);
+  error |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &mask_buffer);
+  error |= clSetKernelArg(kernel, 3, sizeof(cl_uint), &width);
+  error |= clSetKernelArg(kernel, 4, sizeof(cl_uint), &height);
+  error |= clSetKernelArg(kernel, 5, sizeof(cl_uint), &stride);
+  error |= clSetKernelArg(kernel, 6, sizeof(cl_uint), &layout.pixel_size);
+  error |= clSetKernelArg(kernel, 7, sizeof(cl_uint), &layout.red_offset);
+  error |= clSetKernelArg(kernel, 8, sizeof(cl_uint), &layout.green_offset);
+  error |= clSetKernelArg(kernel, 9, sizeof(cl_uint), &layout.blue_offset);
+  error |= clSetKernelArg(kernel, 10, sizeof(cl_uint), &radius);
+  error |= clSetKernelArg(kernel, 11, sizeof(cl_uchar), &threshold);
+  error |= clSetKernelArg(kernel, 12, sizeof(float), &brightness);
+  error |= clSetKernelArg(kernel, 13, sizeof(float), &contrast);
+  error |= clSetKernelArg(kernel, 14, sizeof(float), &saturation);
+  error |= clSetKernelArg(kernel, 15, sizeof(cl_uint), &crop_x);
+  error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &crop_y);
+  error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &crop_width);
+  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &crop_height);
+  error |= clSetKernelArg(kernel, 19, sizeof(cl_uint), &mask_mode);
+  error |= clSetKernelArg(kernel, 20, sizeof(cl_uint), &mask_width_arg);
+  error |= clSetKernelArg(kernel, 21, sizeof(cl_uint), &mask_height_arg);
+  error |= clSetKernelArg(kernel, 22, sizeof(float), &mask_width);
+  error |= clSetKernelArg(kernel, 23, sizeof(float), &mask_height);
 
   const std::size_t global_work_size[] = {frame.width(), frame.height()};
   if (error == CL_SUCCESS) {
@@ -559,7 +646,15 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   }
 
   clReleaseMemObject(output);
+  clReleaseMemObject(mask_buffer);
   clReleaseMemObject(input);
+  if (error == CL_SUCCESS) {
+    if (mask.has_value()) {
+      frame.metadata()["background_blur_mask"] = "onnx";
+    } else if (!frame.metadata().contains("background_blur_mask")) {
+      frame.metadata()["background_blur_mask"] = active_mask_mode;
+    }
+  }
   return error == CL_SUCCESS;
 #else
   (void)frame;

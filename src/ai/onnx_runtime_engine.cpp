@@ -40,6 +40,13 @@ SegmentationMask fallback_segment_person(const frame::Frame &frame) {
 std::int64_t dimension_or(std::int64_t value, std::int64_t fallback) noexcept {
   return value > 0 ? value : fallback;
 }
+
+float probability_from_model_value(float value) noexcept {
+  if (value >= 0.0F && value <= 1.0F) {
+    return value;
+  }
+  return 1.0F / (1.0F + std::exp(-value));
+}
 #endif
 
 } // namespace
@@ -139,11 +146,36 @@ public:
 
     auto mask_width = input_width;
     auto mask_height = input_height;
+    auto channel_count = std::uint32_t{1U};
+    auto person_channel = std::uint32_t{0U};
+    auto channels_last = false;
     if (output_shape.size() >= 2U) {
       mask_height = static_cast<std::uint32_t>(
           dimension_or(output_shape[output_shape.size() - 2U], input_height));
       mask_width = static_cast<std::uint32_t>(
           dimension_or(output_shape[output_shape.size() - 1U], input_width));
+    }
+    if (output_shape.size() == 4U) {
+      const auto first_channel_dim =
+          static_cast<std::uint32_t>(dimension_or(output_shape[1], 1));
+      const auto last_channel_dim =
+          static_cast<std::uint32_t>(dimension_or(output_shape[3], 1));
+      if (first_channel_dim > 1U && first_channel_dim <= 4U) {
+        channel_count = first_channel_dim;
+        person_channel = std::min<std::uint32_t>(1U, channel_count - 1U);
+        mask_height = static_cast<std::uint32_t>(dimension_or(
+            output_shape[2], static_cast<std::int64_t>(input_height)));
+        mask_width = static_cast<std::uint32_t>(dimension_or(
+            output_shape[3], static_cast<std::int64_t>(input_width)));
+      } else if (last_channel_dim > 1U && last_channel_dim <= 4U) {
+        channel_count = last_channel_dim;
+        person_channel = std::min<std::uint32_t>(1U, channel_count - 1U);
+        channels_last = true;
+        mask_height = static_cast<std::uint32_t>(dimension_or(
+            output_shape[1], static_cast<std::int64_t>(input_height)));
+        mask_width = static_cast<std::uint32_t>(dimension_or(
+            output_shape[2], static_cast<std::int64_t>(input_width)));
+      }
     }
     if (static_cast<std::size_t>(mask_width) * mask_height > output_count) {
       return fallback_segment_person(frame);
@@ -157,8 +189,17 @@ public:
       for (std::uint32_t x = 0; x < frame.width(); ++x) {
         const auto mask_x = static_cast<std::uint32_t>(
             (static_cast<std::uint64_t>(x) * mask_width) / frame.width());
-        const auto value =
-            output[filters::detail::pixel_index(mask_x, mask_y, mask_width)];
+        const auto mask_index =
+            filters::detail::pixel_index(mask_x, mask_y, mask_width);
+        const auto output_index =
+            channels_last ? (mask_index * channel_count) + person_channel
+                          : (static_cast<std::size_t>(person_channel) *
+                             mask_width * mask_height) +
+                                mask_index;
+        if (output_index >= output_count) {
+          return fallback_segment_person(frame);
+        }
+        const auto value = probability_from_model_value(output[output_index]);
         mask.push_back(value >= 0.5F ? 255U : 0U);
       }
     }

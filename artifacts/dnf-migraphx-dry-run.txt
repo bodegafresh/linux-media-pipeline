@@ -1,0 +1,10 @@
+Paquete                 Arq.   Versión         Repositorio    Tamaño
+Instalando:
+ migraphx               x86_64 0:7.1.1-2.fc44  fedora        1.1 GiB
+ migraphx-devel         x86_64 0:7.1.1-2.fc44  fedora        1.7 MiB
+ onnxruntime-rocm       x86_64 0:1.22.2-2.fc44 fedora        2.3 GiB
+ onnxruntime-rocm-devel x86_64 0:1.22.2-2.fc44 fedora       14.5 MiB
+
+Resumen de la transacción:
+ Instalando:          4 paquetes
+

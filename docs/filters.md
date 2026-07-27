@@ -34,6 +34,9 @@ filter_backend_active=opencl
   tutorial/meeting framing.
 - `config/presets/ai-background-blur.yaml`: CPU ONNX person segmentation plus
   fused OpenCL background blur, auto-framing, compositing, and color cleanup.
+- `config/presets/ai-background-blur-performance.yaml`: same live path with a
+  lighter blur radius and less frequent segmentation updates for lower latency
+  when recording/streaming.
 - `config/presets/ai-background-blur-rocm.yaml`: experimental ROCm inference
   preset for provider/model diagnostics, not the default live path.
 - `config/presets/background-blur.yaml`: fused OpenCL background blur plus light
@@ -42,7 +45,9 @@ filter_backend_active=opencl
 
 For calls, prefer `ai-presenter.yaml` when framing matters and
 `ai-background-blur.yaml` when you want AI background blur with GPU-accelerated
-OpenCL postprocessing. Filters such as `sharpen`,
+OpenCL postprocessing. If OBS audio/video starts drifting or `runtime_stats`
+reports frequent `dropped_frames`, switch to
+`ai-background-blur-performance.yaml`. Filters such as `sharpen`,
 `sobel`, `histogram` overlays, and text overlays are CPU-heavy and can add
 latency at 1280x720.
 

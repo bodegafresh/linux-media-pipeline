@@ -82,8 +82,12 @@ For a tuning pass, add stats:
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml --stats-every 5
 ```
 
-Use the reported FPS and frame times to tune `inference_interval` and
-`mask_smoothing` in `config/presets/ai-background-blur.yaml`.
+Use the reported FPS, frame times, and `dropped_frames` count to tune latency.
+If the stream drifts behind audio, use the lighter preset:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur-performance.yaml --stats-every 5
+```
 
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because

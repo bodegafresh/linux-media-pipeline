@@ -72,7 +72,7 @@ float probability_from_model_value(float value) noexcept {
 }
 
 std::uint8_t probability_to_mask_value(float value) noexcept {
-  const auto probability = std::clamp(value, 0.0F, 1.0F);
+  const auto probability = probability_from_model_value(value);
   const auto scaled =
       static_cast<int>(std::round(probability * static_cast<float>(255U)));
   return static_cast<std::uint8_t>(std::clamp(scaled, 0, 255));

@@ -210,8 +210,8 @@ public:
       : env_(ORT_LOGGING_LEVEL_WARNING, "linux-media-pipeline"),
         session_options_{}, allocator_{}, input_shape_{1, 3, 256, 256},
         output_shape_(std::move(output_shape)),
-        requested_provider_(std::move(requested_provider)),
-        allow_provider_fallback_(allow_provider_fallback) {
+        allow_provider_fallback_(allow_provider_fallback),
+        requested_provider_(std::move(requested_provider)) {
     inference_interval_ = std::max<std::uint32_t>(1U, inference_interval);
     mask_smoothing_ = std::clamp(mask_smoothing, 0.0, 0.95);
     try {

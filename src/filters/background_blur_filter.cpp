@@ -471,6 +471,13 @@ BackgroundBlurFilter::BackgroundBlurFilter(
         "background_blur fallback_mask_mode must be luminance, center, or "
         "tracked_center");
   }
+  if (requested_provider_ != "auto" && requested_provider_ != "cpu" &&
+      requested_provider_ != "rocm" && requested_provider_ != "migraphx" &&
+      requested_provider_ != "openvino") {
+    throw std::invalid_argument(
+        "background_blur provider must be auto, cpu, rocm, migraphx, or "
+        "openvino");
+  }
   if (mask_width_ <= 0.0 || mask_height_ <= 0.0) {
     throw std::invalid_argument(
         "background_blur mask dimensions must be positive");

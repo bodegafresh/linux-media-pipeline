@@ -728,7 +728,7 @@ private:
   std::string active_provider_ = "CPUExecutionProvider";
   std::string available_providers_ = "[]";
   std::string provider_fallback_reason_;
-  std::string model_summary_;
+  std::string model_summary_ = "unavailable";
   std::string openvino_available_devices_ = "[CPU]";
   std::string openvino_device_requested_ = "CPU";
   std::string openvino_device_active_ = "CPU";

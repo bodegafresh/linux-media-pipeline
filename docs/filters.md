@@ -45,7 +45,7 @@ filter_backend_active=opencl
 - `config/presets/ai-background-color.yaml`: replaces the background with a
   solid color using the same ONNX person mask.
 - `config/presets/ai-background-image.yaml`: replaces the background with a
-  static image from `assets/backgrounds/static-background.png`.
+  static JPG/PNG image from `assets/backgrounds/static-background.jpg`.
 - `config/presets/ai-background-video.yaml`: replaces the background with a
   looping video or GIF from `assets/backgrounds/animated-background.mp4`.
 - `config/presets/background-blur.yaml`: fused OpenCL background blur plus light
@@ -65,7 +65,7 @@ latency at 1280x720.
 ```yaml
 background_mode: blur   # blur, color, image, or video
 background_color: x111827
-background_path: assets/backgrounds/static-background.png
+background_path: assets/backgrounds/static-background.jpg
 ```
 
 Use `background_mode: video` for MP4/WebM loops or GIF files. When a background

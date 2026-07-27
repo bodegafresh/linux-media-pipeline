@@ -39,7 +39,7 @@ filters:
     radius: 8
     foreground_threshold: 128
     background_mode: image
-    background_path: assets/backgrounds/static-background.png
+    background_path: assets/backgrounds/static-background.jpg
     background_color: x111827
     brightness: 2
     contrast: 1.05

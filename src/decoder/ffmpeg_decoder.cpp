@@ -112,20 +112,31 @@ public:
                                ffmpeg_error(open_result));
     }
     format_.reset(raw_format);
+    if (format_->iformat != nullptr && format_->iformat->name != nullptr) {
+      const auto input_format = std::string_view{format_->iformat->name};
+      reusable_on_eof_ = input_format.find("image2") != std::string_view::npos;
+    }
 
-    const auto stream_result =
-        avformat_find_stream_info(format_.get(), nullptr);
-    if (stream_result < 0) {
-      throw std::runtime_error("cannot read FFmpeg stream info: " +
-                               ffmpeg_error(stream_result));
+    if (!reusable_on_eof_) {
+      const auto stream_result =
+          avformat_find_stream_info(format_.get(), nullptr);
+      if (stream_result < 0) {
+        throw std::runtime_error("cannot read FFmpeg stream info: " +
+                                 ffmpeg_error(stream_result));
+      }
     }
 
     const auto best_stream = av_find_best_stream(
         format_.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
     if (best_stream < 0) {
-      throw std::runtime_error("FFmpeg input does not contain a video stream");
+      if (!reusable_on_eof_ || format_->nb_streams == 0U ||
+          format_->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
+        throw std::runtime_error("FFmpeg input does not contain a video stream");
+      }
+      stream_index_ = 0;
+    } else {
+      stream_index_ = best_stream;
     }
-    stream_index_ = best_stream;
 
     const auto *parameters = format_->streams[stream_index_]->codecpar;
     const auto *codec = avcodec_find_decoder(parameters->codec_id);
@@ -170,16 +181,15 @@ public:
           avcodec_receive_frame(codec_.get(), decoded_.get());
       if (receive_result == 0) {
         convert_current_frame();
-        return frame::Frame{
-            width_,
-            height_,
-            frame::PixelFormat::Rgb,
-            converted_bytes_,
-            std::vector<std::size_t>{static_cast<std::size_t>(width_) * 3U},
-            frame::Frame::Clock::now()};
+        last_frame_bytes_ = converted_bytes_;
+        return make_frame(converted_bytes_);
       }
       if (receive_result == AVERROR_INVALIDDATA) {
         continue;
+      }
+      if (receive_result == AVERROR_EOF && reusable_on_eof_ &&
+          !last_frame_bytes_.empty()) {
+        return make_frame(last_frame_bytes_);
       }
       if (receive_result != AVERROR(EAGAIN)) {
         throw std::runtime_error("cannot decode FFmpeg frame: " +
@@ -223,6 +233,16 @@ public:
   }
 
 private:
+  frame::Frame make_frame(const std::vector<std::uint8_t> &bytes) const {
+    return frame::Frame{
+        width_,
+        height_,
+        frame::PixelFormat::Rgb,
+        bytes,
+        std::vector<std::size_t>{static_cast<std::size_t>(width_) * 3U},
+        frame::Frame::Clock::now()};
+  }
+
   void convert_current_frame() {
     sws_.reset(sws_getCachedContext(
         sws_.release(), decoded_->width, decoded_->height,
@@ -247,7 +267,9 @@ private:
   std::unique_ptr<AVPacket, PacketDeleter> packet_;
   std::unique_ptr<SwsContext, SwsDeleter> sws_;
   std::vector<std::uint8_t> converted_bytes_;
+  std::vector<std::uint8_t> last_frame_bytes_;
   bool decoder_flushed_ = false;
+  bool reusable_on_eof_ = false;
 };
 #else
 class FfmpegDecoder::Impl {

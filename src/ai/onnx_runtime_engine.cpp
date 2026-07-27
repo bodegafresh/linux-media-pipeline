@@ -63,28 +63,31 @@ float probability_from_model_value(float value) noexcept {
   return 1.0F / (1.0F + std::exp(-value));
 }
 
-using Shape = std::array<std::int64_t, 4>;
+struct TensorShape {
+  std::array<std::int64_t, 4> dimensions{};
+  std::size_t rank = 0;
+};
 
 template <typename TensorInfo>
-std::optional<Shape> read_4d_shape(const TensorInfo &info,
-                                   const Shape &fallback) {
+std::optional<TensorShape> read_shape(const TensorInfo &info) {
   std::size_t rank = 0;
   const auto rank_status = Ort::GetApi().GetDimensionsCount(info, &rank);
   if (rank_status != nullptr) {
     Ort::GetApi().ReleaseStatus(rank_status);
     return std::nullopt;
   }
-  if (rank != fallback.size()) {
+  if (rank == 0U || rank > 4U) {
     return std::nullopt;
   }
-  auto shape = fallback;
+  auto shape = TensorShape{};
+  shape.rank = rank;
   const auto dimensions_status =
-      Ort::GetApi().GetDimensions(info, shape.data(), shape.size());
+      Ort::GetApi().GetDimensions(info, shape.dimensions.data(), rank);
   if (dimensions_status != nullptr) {
     Ort::GetApi().ReleaseStatus(dimensions_status);
     return std::nullopt;
   }
-  for (auto &dimension : shape) {
+  for (auto &dimension : shape.dimensions) {
     dimension = dimension_or(dimension, 0);
   }
   return shape;
@@ -120,23 +123,43 @@ public:
 
       const auto input_info =
           session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-      const auto maybe_shape = read_4d_shape(input_info, input_shape_);
+      const auto maybe_shape = read_shape(input_info);
       if (!maybe_shape.has_value()) {
-        last_error_ = "model input must be rank 4";
+        last_error_ = "model input rank must be 3 or 4";
         return;
       }
       const auto shape = *maybe_shape;
-      const auto looks_channels_last =
-          dimension_or(shape[3], 3) == 3 && dimension_or(shape[1], 256) != 3;
-      input_shape_[0] = dimension_or(shape[0], 1);
-      input_shape_[1] =
-          std::min(dimension_or(shape[1], looks_channels_last ? 256 : 3),
-                   kMaxModelDimension);
-      input_shape_[2] =
-          std::min(dimension_or(shape[2], 256), kMaxModelDimension);
-      input_shape_[3] =
-          std::min(dimension_or(shape[3], looks_channels_last ? 3 : 256),
-                   kMaxModelDimension);
+      if (shape.rank == 3U) {
+        const auto looks_channels_last =
+            dimension_or(shape.dimensions[2], 3) == 3;
+        input_shape_[0] = 1;
+        input_shape_[1] = std::min(
+            dimension_or(shape.dimensions[0], looks_channels_last ? 256 : 3),
+            kMaxModelDimension);
+        input_shape_[2] = std::min(dimension_or(shape.dimensions[1], 256),
+                                   kMaxModelDimension);
+        input_shape_[3] = std::min(
+            dimension_or(shape.dimensions[2], looks_channels_last ? 3 : 256),
+            kMaxModelDimension);
+        input_shape_rank_ = 3U;
+      } else if (shape.rank == 4U) {
+        const auto looks_channels_last =
+            dimension_or(shape.dimensions[3], 3) == 3 &&
+            dimension_or(shape.dimensions[1], 256) != 3;
+        input_shape_[0] = dimension_or(shape.dimensions[0], 1);
+        input_shape_[1] = std::min(
+            dimension_or(shape.dimensions[1], looks_channels_last ? 256 : 3),
+            kMaxModelDimension);
+        input_shape_[2] = std::min(dimension_or(shape.dimensions[2], 256),
+                                   kMaxModelDimension);
+        input_shape_[3] = std::min(
+            dimension_or(shape.dimensions[3], looks_channels_last ? 3 : 256),
+            kMaxModelDimension);
+        input_shape_rank_ = 4U;
+      } else {
+        last_error_ = "model input rank must be 3 or 4";
+        return;
+      }
 
       input_channels_last_ = input_shape_[3] == 3 && input_shape_[1] != 3;
       const auto input_height = static_cast<std::uint32_t>(
@@ -212,9 +235,9 @@ public:
 
     auto memory_info =
         Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    auto tensor = Ort::Value::CreateTensor<float>(
-        memory_info, input.data(), input.size(), input_shape_.data(),
-        input_shape_.size());
+    auto tensor =
+        Ort::Value::CreateTensor<float>(memory_info, input.data(), input.size(),
+                                        input_shape_.data(), input_shape_rank_);
     const char *input_names[] = {input_name_.c_str()};
     const char *output_names[] = {output_name_.c_str()};
     auto outputs = session_->Run(Ort::RunOptions{nullptr}, input_names, &tensor,
@@ -224,8 +247,7 @@ public:
     }
 
     const auto output_info = outputs.front().GetTensorTypeAndShapeInfo();
-    const auto output_shape =
-        read_4d_shape(output_info, Shape{1, 1, input_height, input_width});
+    const auto output_shape = read_shape(output_info);
     const auto *output = outputs.front().GetTensorData<float>();
     const auto output_count = output_info.GetElementCount();
     if (output == nullptr || output_count == 0U) {
@@ -239,29 +261,57 @@ public:
     auto channels_last = false;
     if (output_shape.has_value()) {
       const auto shape = *output_shape;
-      mask_height =
-          static_cast<std::uint32_t>(dimension_or(shape[2], input_height));
-      mask_width =
-          static_cast<std::uint32_t>(dimension_or(shape[3], input_width));
-      const auto first_channel_dim =
-          static_cast<std::uint32_t>(dimension_or(shape[1], 1));
-      const auto last_channel_dim =
-          static_cast<std::uint32_t>(dimension_or(shape[3], 1));
-      if (last_channel_dim <= 4U) {
-        channel_count = last_channel_dim;
-        person_channel = channel_count > 1U ? 1U : 0U;
-        channels_last = true;
+      if (shape.rank == 2U) {
+        mask_height = static_cast<std::uint32_t>(dimension_or(
+            shape.dimensions[0], static_cast<std::int64_t>(input_height)));
+        mask_width = static_cast<std::uint32_t>(dimension_or(
+            shape.dimensions[1], static_cast<std::int64_t>(input_width)));
+      } else if (shape.rank == 3U) {
+        const auto first_channel_dim =
+            static_cast<std::uint32_t>(dimension_or(shape.dimensions[0], 1));
+        const auto last_channel_dim =
+            static_cast<std::uint32_t>(dimension_or(shape.dimensions[2], 1));
+        if (last_channel_dim <= 4U) {
+          channel_count = last_channel_dim;
+          person_channel = channel_count > 1U ? 1U : 0U;
+          channels_last = true;
+          mask_height = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[0], static_cast<std::int64_t>(input_height)));
+          mask_width = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[1], static_cast<std::int64_t>(input_width)));
+        } else if (first_channel_dim <= 4U) {
+          channel_count = first_channel_dim;
+          person_channel = channel_count > 1U ? 1U : 0U;
+          mask_height = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[1], static_cast<std::int64_t>(input_height)));
+          mask_width = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[2], static_cast<std::int64_t>(input_width)));
+        }
+      } else if (shape.rank == 4U) {
         mask_height = static_cast<std::uint32_t>(
-            dimension_or(shape[1], static_cast<std::int64_t>(input_height)));
+            dimension_or(shape.dimensions[2], input_height));
         mask_width = static_cast<std::uint32_t>(
-            dimension_or(shape[2], static_cast<std::int64_t>(input_width)));
-      } else if (first_channel_dim <= 4U) {
-        channel_count = first_channel_dim;
-        person_channel = channel_count > 1U ? 1U : 0U;
-        mask_height = static_cast<std::uint32_t>(
-            dimension_or(shape[2], static_cast<std::int64_t>(input_height)));
-        mask_width = static_cast<std::uint32_t>(
-            dimension_or(shape[3], static_cast<std::int64_t>(input_width)));
+            dimension_or(shape.dimensions[3], input_width));
+        const auto first_channel_dim =
+            static_cast<std::uint32_t>(dimension_or(shape.dimensions[1], 1));
+        const auto last_channel_dim =
+            static_cast<std::uint32_t>(dimension_or(shape.dimensions[3], 1));
+        if (last_channel_dim <= 4U) {
+          channel_count = last_channel_dim;
+          person_channel = channel_count > 1U ? 1U : 0U;
+          channels_last = true;
+          mask_height = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[1], static_cast<std::int64_t>(input_height)));
+          mask_width = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[2], static_cast<std::int64_t>(input_width)));
+        } else if (first_channel_dim <= 4U) {
+          channel_count = first_channel_dim;
+          person_channel = channel_count > 1U ? 1U : 0U;
+          mask_height = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[2], static_cast<std::int64_t>(input_height)));
+          mask_width = static_cast<std::uint32_t>(dimension_or(
+              shape.dimensions[3], static_cast<std::int64_t>(input_width)));
+        }
       }
     }
     if (!dimensions_are_sane(mask_width, mask_height)) {
@@ -311,6 +361,7 @@ private:
   std::string input_name_;
   std::string output_name_;
   std::array<std::int64_t, 4> input_shape_;
+  std::size_t input_shape_rank_ = 4U;
   std::optional<SegmentationMask> cached_mask_;
   std::uint64_t frame_index_ = 0;
   std::uint32_t inference_interval_ = 3;

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -391,6 +392,9 @@ cl_uint opencl_mask_mode(std::string_view mode) {
   if (mode == "onnx") {
     return 2U;
   }
+  if (mode == "tracked_center") {
+    return 1U;
+  }
   return mode == "center" ? 1U : 0U;
 }
 #endif
@@ -415,22 +419,25 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
     : BackgroundBlurFilter(radius, foreground_threshold, std::move(backend),
                            brightness, contrast, saturation, false, 1.0, 1.0,
                            "luminance", 0.28, 0.42,
-                           "assets/models/person-segmentation.onnx", 3U, 0.70) {
-}
+                           "assets/models/person-segmentation.onnx", 3U, 0.70,
+                           "tracked_center") {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
     std::string backend, double brightness, double contrast, double saturation,
     bool auto_frame, double target_fill, double max_zoom, std::string mask_mode,
     double mask_width, double mask_height, std::string model_path,
-    std::uint32_t inference_interval, double mask_smoothing)
+    std::uint32_t inference_interval, double mask_smoothing,
+    std::string fallback_mask_mode)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
       target_fill_(target_fill), max_zoom_(max_zoom),
       mask_mode_(std::move(mask_mode)), mask_width_(mask_width),
       mask_height_(mask_height), model_path_(std::move(model_path)),
-      inference_interval_(inference_interval), mask_smoothing_(mask_smoothing) {
+      inference_interval_(inference_interval), mask_smoothing_(mask_smoothing),
+      fallback_mask_mode_(std::move(fallback_mask_mode)),
+      onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -451,6 +458,12 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       mask_mode_ != "onnx") {
     throw std::invalid_argument(
         "background_blur mask_mode must be luminance, center, or onnx");
+  }
+  if (fallback_mask_mode_ != "luminance" && fallback_mask_mode_ != "center" &&
+      fallback_mask_mode_ != "tracked_center") {
+    throw std::invalid_argument(
+        "background_blur fallback_mask_mode must be luminance, center, or "
+        "tracked_center");
   }
   if (mask_width_ <= 0.0 || mask_height_ <= 0.0) {
     throw std::invalid_argument(
@@ -475,8 +488,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     try {
       onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
           model_path_, inference_interval_, mask_smoothing_);
-    } catch (const std::exception &) {
-      frame.metadata()["background_blur_mask"] = "onnx_init_error_center";
+    } catch (const std::exception &error) {
+      frame.metadata()["background_blur_mask"] =
+          "onnx_init_error_" + fallback_mask_mode_;
+      if (!onnx_error_reported_) {
+        std::cerr << "background_blur_onnx_error=init_failed message=\""
+                  << error.what() << "\"\n";
+        onnx_error_reported_ = true;
+      }
       return std::nullopt;
     }
   }
@@ -488,8 +507,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     auto mask = onnx_engine_->segment_person(frame);
     frame.metadata()["background_blur_mask"] = "onnx";
     return mask;
-  } catch (const std::exception &) {
-    frame.metadata()["background_blur_mask"] = "onnx_error_center";
+  } catch (const std::exception &error) {
+    frame.metadata()["background_blur_mask"] =
+        "onnx_error_" + fallback_mask_mode_;
+    if (!onnx_error_reported_) {
+      std::cerr << "background_blur_onnx_error=inference_failed message=\""
+                << error.what() << "\"\n";
+      onnx_error_reported_ = true;
+    }
     return std::nullopt;
   }
 }
@@ -574,7 +599,7 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
     mask_width_px = mask->width();
     mask_height_px = mask->height();
   } else if (mask_mode_ == "onnx") {
-    active_mask_mode = "center";
+    active_mask_mode = fallback_mask_mode_;
   }
 
   cl_int error = CL_SUCCESS;

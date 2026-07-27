@@ -75,11 +75,16 @@ The AI blur preset exposes the main performance knobs:
 ```yaml
 inference_interval: 3
 mask_smoothing: 0.70
+fallback_mask_mode: tracked_center
+radius: 8
 ```
 
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.
+`fallback_mask_mode: tracked_center` keeps video usable when ONNX fails by
+tracking the crop with a lightweight foreground heuristic. `radius` controls
+background blur strength; higher values blur more but cost more GPU time.
 
 For calibration, print runtime stats every five seconds:
 

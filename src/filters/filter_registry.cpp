@@ -208,7 +208,9 @@ FilterRegistry create_default_registry() {
             detail::string_parameter(config, "model_path",
                                      "assets/models/person-segmentation.onnx"),
             detail::coordinate_parameter(config, "inference_interval", 3U),
-            detail::double_parameter(config, "mask_smoothing", 0.70));
+            detail::double_parameter(config, "mask_smoothing", 0.70),
+            detail::string_parameter(config, "fallback_mask_mode",
+                                     "tracked_center"));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

@@ -177,6 +177,8 @@ If it prints `background_blur_mask_active=onnx_unavailable_center`,
 `background_blur_mask_active=center`, the runtime is not using a real model yet;
 check that the model file exists, that Fedora installed `onnxruntime` and
 `onnxruntime-devel`, and that the model input/output shape is compatible.
+`./scripts/stream.sh install-model` installs the preferred ONNX Runtime model
+and its external `.data` weights file when required.
 
 FFmpeg warnings are hidden by default so the runtime status lines stay readable.
 To temporarily restore FFmpeg diagnostics:
@@ -195,6 +197,8 @@ The stats line reports real pipeline FPS plus average and worst frame time. If
 FPS drops, increase `inference_interval` in the preset so the ONNX model runs
 less often. If the crop follows too slowly, lower `mask_smoothing`; if it jitters,
 raise it slightly.
+If ONNX is unavailable, `fallback_mask_mode: tracked_center` keeps a broader
+center mask while still using lightweight tracking for the crop.
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
 [docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).

@@ -7,6 +7,7 @@ sudo dnf install -y \
   gcc-c++ \
   conan \
   git \
+  unzip \
   clang-tools-extra \
   cppcheck \
   v4l2loopback \

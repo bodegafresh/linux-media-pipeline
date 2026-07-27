@@ -45,10 +45,21 @@ case "${mode}" in
   install-model)
     model_dir="assets/models"
     model_path="${model_dir}/person-segmentation.onnx"
-    model_url="https://unpkg.com/jp.ikep.mediapipe.selfiesegmentation@1.0.1/ONNX/selfie_segmentation.onnx"
+    model_zip_url="https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/mediapipe_selfie/releases/v0.52.0/mediapipe_selfie-onnx-float.zip"
+    fallback_model_url="https://unpkg.com/jp.ikep.mediapipe.selfiesegmentation@1.0.1/ONNX/selfie_segmentation.onnx"
+    tmp_zip="$(mktemp)"
+    tmp_dir="$(mktemp -d)"
     mkdir -p "${model_dir}"
     echo "Downloading MediaPipe Selfie Segmentation ONNX model..."
-    curl -fL "${model_url}" -o "${model_path}"
+    if curl -fL "${model_zip_url}" -o "${tmp_zip}"; then
+      unzip -q -o "${tmp_zip}" -d "${tmp_dir}"
+      cp "${tmp_dir}/mediapipe_selfie-onnx-float/mediapipe_selfie.onnx" "${model_path}"
+      cp "${tmp_dir}/mediapipe_selfie-onnx-float/mediapipe_selfie.data" "${model_dir}/mediapipe_selfie.data"
+    else
+      echo "Preferred model download failed; using fallback ONNX model." >&2
+      curl -fL "${fallback_model_url}" -o "${model_path}"
+    fi
+    rm -rf "${tmp_zip}" "${tmp_dir}"
     echo "Installed ${model_path}"
     ;;
 

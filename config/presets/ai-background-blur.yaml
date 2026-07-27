@@ -24,10 +24,11 @@ filters:
     model_path: assets/models/person-segmentation.onnx
     inference_interval: 3
     mask_smoothing: 0.70
-    mask_width: 0.30
-    mask_height: 0.48
-    radius: 4
-    foreground_threshold: 128
+    fallback_mask_mode: tracked_center
+    mask_width: 0.34
+    mask_height: 0.54
+    radius: 8
+    foreground_threshold: 118
     brightness: 2
     contrast: 1.04
     saturation: 1.03

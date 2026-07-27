@@ -65,14 +65,25 @@ float probability_from_model_value(float value) noexcept {
 
 using Shape = std::array<std::int64_t, 4>;
 
-std::optional<Shape> read_4d_shape(const Ort::TensorTypeAndShapeInfo &info,
+template <typename TensorInfo>
+std::optional<Shape> read_4d_shape(const TensorInfo &info,
                                    const Shape &fallback) {
-  const auto rank = info.GetDimensionsCount();
+  std::size_t rank = 0;
+  const auto rank_status = Ort::GetApi().GetDimensionsCount(info, &rank);
+  if (rank_status != nullptr) {
+    Ort::GetApi().ReleaseStatus(rank_status);
+    return std::nullopt;
+  }
   if (rank != fallback.size()) {
     return std::nullopt;
   }
   auto shape = fallback;
-  info.GetDimensions(shape.data(), shape.size());
+  const auto dimensions_status =
+      Ort::GetApi().GetDimensions(info, shape.data(), shape.size());
+  if (dimensions_status != nullptr) {
+    Ort::GetApi().ReleaseStatus(dimensions_status);
+    return std::nullopt;
+  }
   for (auto &dimension : shape) {
     dimension = dimension_or(dimension, 0);
   }

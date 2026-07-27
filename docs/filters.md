@@ -150,9 +150,16 @@ When rejected, the stream prints `segmentation_mask_rejected=...` and falls back
 to the configured stable mask mode instead of using a noisy mask for blur or
 auto-framing.
 
-For the ROCm preset, the intended path is body segmentation first and the
-fallback is intentionally non-elliptical so it does not visibly pulse a center
-oval over the video. A healthy run should normally show:
+For the ROCm preset, the intended path is body segmentation first. If the model
+returns an obviously oversized mask, the pipeline now tries an adaptive
+threshold recovery before rejecting it. A healthy recovered run may show:
+
+```text
+segmentation_mask_recovered=adaptive_threshold
+segmentation_mask_coverage_adaptive=...
+```
+
+A fully healthy run should normally show:
 
 ```text
 background_blur_mask_active=onnx
@@ -160,15 +167,16 @@ segmentation_inference_backend=ROCMExecutionProvider
 background_processing_backend=opencl
 ```
 
-If `background_blur_mask_active=onnx_rejected_luminance` appears repeatedly, the
-model output is still being rejected by coverage checks and the segmentation
-tuning needs another pass.
+If `background_blur_mask_active=onnx_rejected_tracked_center` appears
+repeatedly, the model output is still being rejected by coverage checks. The
+fallback protects the presenter with a broad stable center mask, but it is not
+true body segmentation.
 
 For live streaming, a rejected or failed ONNX frame briefly reuses the last
-accepted person matte before falling back to luminance. This avoids a single
-bad inference suddenly blurring the presenter, but the reuse is capped so the
-matte does not visibly lag behind movement for seconds. The stream reports this
-as:
+accepted person matte before falling back to the configured stable mask mode.
+This avoids a single bad inference suddenly blurring the presenter, but the
+reuse is capped so the matte does not visibly lag behind movement for seconds.
+The stream reports this as:
 
 ```text
 background_blur_mask_active=onnx_previous
@@ -195,9 +203,9 @@ The ONNX mask is intentionally kept at model resolution and scaled in the GPU
 kernel; refining it at full 1280x720 is too expensive for live video.
 ONNX inference runs asynchronously after the first mask, so the output keeps
 using the latest valid mask while the next one is calculated.
-`fallback_mask_mode: luminance` keeps video usable when ONNX fails without
-showing a center oval over the presenter. `radius` controls
-background blur strength; higher values blur more but cost more GPU time.
+`fallback_mask_mode: tracked_center` keeps the presenter usable when ONNX fails
+instead of blurring the entire frame by brightness. `radius` controls background
+blur strength; higher values blur more but cost more GPU time.
 
 For calibration, print runtime stats every five seconds:
 

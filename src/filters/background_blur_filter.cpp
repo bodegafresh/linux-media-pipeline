@@ -324,6 +324,42 @@ OpenClBackgroundBlurResources &opencl_background_resources() {
 }
 #endif
 
+struct AdaptiveMask {
+  ai::SegmentationMask mask;
+  std::uint8_t threshold;
+  double coverage;
+};
+
+std::optional<AdaptiveMask>
+adaptive_top_coverage_mask(const ai::SegmentationMask &mask,
+                           double target_coverage) {
+  if (mask.values().empty()) {
+    return std::nullopt;
+  }
+
+  const auto clamped_target = std::clamp(target_coverage, 0.05, 0.60);
+  std::vector<std::uint8_t> sorted{mask.values().begin(), mask.values().end()};
+  std::sort(sorted.begin(), sorted.end());
+  const auto threshold_index = static_cast<std::size_t>(std::clamp(
+      std::floor((1.0 - clamped_target) *
+                 static_cast<double>(sorted.size() - 1U)),
+      0.0, static_cast<double>(sorted.size() - 1U)));
+  const auto threshold = sorted[threshold_index];
+
+  std::vector<std::uint8_t> values;
+  values.reserve(mask.values().size());
+  for (const auto value : mask.values()) {
+    values.push_back(value >= threshold ? 255U : 0U);
+  }
+
+  auto recovered =
+      ai::SegmentationMask{mask.width(), mask.height(), std::move(values)};
+  constexpr auto kBinaryForegroundThreshold = std::uint8_t{180U};
+  const auto coverage =
+      ai::mask_coverage(recovered, kBinaryForegroundThreshold);
+  return AdaptiveMask{std::move(recovered), threshold, coverage};
+}
+
 #if LMP_HAS_OPENCL
 struct Bounds {
   std::uint32_t min_x;
@@ -735,7 +771,31 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     } else {
       frame.metadata()["segmentation_mask_largest_component"] = "false";
     }
-    const auto usable_coverage = ai::mask_coverage(mask, foreground_threshold_);
+    auto usable_coverage = ai::mask_coverage(mask, foreground_threshold_);
+    if (usable_coverage > max_mask_coverage_) {
+      constexpr auto kTargetRecoveredCoverage = 0.34;
+      if (auto recovered =
+              adaptive_top_coverage_mask(mask, kTargetRecoveredCoverage)) {
+        auto recovered_mask = std::move(recovered->mask);
+        if (keep_largest_component_) {
+          recovered_mask =
+              ai::largest_component_mask(recovered_mask, foreground_threshold_);
+        }
+        const auto recovered_coverage =
+            ai::mask_coverage(recovered_mask, foreground_threshold_);
+        frame.metadata()["segmentation_mask_adaptive_threshold"] =
+            std::to_string(recovered->threshold);
+        frame.metadata()["segmentation_mask_coverage_adaptive"] =
+            std::to_string(recovered_coverage);
+        if (recovered_coverage >= min_mask_coverage_ &&
+            recovered_coverage <= max_mask_coverage_) {
+          mask = std::move(recovered_mask);
+          usable_coverage = recovered_coverage;
+          frame.metadata()["segmentation_mask_recovered"] =
+              "adaptive_threshold";
+        }
+      }
+    }
     if (usable_coverage < min_mask_coverage_ ||
         usable_coverage > max_mask_coverage_) {
       frame.metadata()["background_blur_mask"] =

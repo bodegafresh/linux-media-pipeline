@@ -78,6 +78,7 @@ std::optional<TensorShape> read_shape(const TensorInfo &info) {
     Ort::GetApi().ReleaseStatus(rank_status);
     return std::nullopt;
   }
+  auto shape = TensorShape{};
   if (rank == 0U || rank > shape.dimensions.size()) {
     shape.rank = rank;
     return std::nullopt;

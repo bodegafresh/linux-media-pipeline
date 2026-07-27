@@ -84,6 +84,7 @@ private:
   mutable std::unique_ptr<lmp::decoder::FfmpegDecoder> background_decoder_;
   mutable std::vector<std::uint8_t> static_background_;
   mutable std::string background_error_;
+  mutable bool static_background_load_attempted_ = false;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable std::optional<ai::SegmentationMask> last_good_person_mask_;
   mutable std::uint32_t last_good_person_mask_reuse_count_ = 0;

@@ -1033,7 +1033,13 @@ BackgroundBlurFilter::background_pixels(const frame::Frame &frame) const {
   if (background_mode_ == "image" && !static_background_.empty()) {
     return static_background_;
   }
+  if (background_mode_ == "image" && static_background_load_attempted_) {
+    return fallback();
+  }
   try {
+    if (background_mode_ == "image") {
+      static_background_load_attempted_ = true;
+    }
     if (background_decoder_ == nullptr) {
       background_decoder_ = std::make_unique<lmp::decoder::FfmpegDecoder>(
           background_path_, frame.width(), frame.height());

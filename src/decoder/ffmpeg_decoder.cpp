@@ -188,12 +188,22 @@ public:
 
       const auto read_result = av_read_frame(format_.get(), packet_.get());
       if (read_result < 0) {
+        if (read_result == AVERROR_EOF && !decoder_flushed_) {
+          decoder_flushed_ = true;
+          const auto flush_result = avcodec_send_packet(codec_.get(), nullptr);
+          if (flush_result == 0 || flush_result == AVERROR_EOF) {
+            continue;
+          }
+          throw std::runtime_error("cannot flush FFmpeg decoder: " +
+                                   ffmpeg_error(flush_result));
+        }
         throw std::runtime_error("cannot read FFmpeg packet: " +
                                  ffmpeg_error(read_result));
       }
       if (packet_->stream_index == stream_index_) {
         const auto send_result =
             avcodec_send_packet(codec_.get(), packet_.get());
+        decoder_flushed_ = false;
         av_packet_unref(packet_.get());
         if (send_result == AVERROR_INVALIDDATA) {
           continue;
@@ -237,6 +247,7 @@ private:
   std::unique_ptr<AVPacket, PacketDeleter> packet_;
   std::unique_ptr<SwsContext, SwsDeleter> sws_;
   std::vector<std::uint8_t> converted_bytes_;
+  bool decoder_flushed_ = false;
 };
 #else
 class FfmpegDecoder::Impl {

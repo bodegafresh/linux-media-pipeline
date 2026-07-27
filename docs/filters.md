@@ -123,6 +123,9 @@ invert_mask: true
 ```
 
 The startup diagnostics will print `segmentation_mask_inverted=true`.
+Most person-segmentation models mark the person as high/white, so the ROCm
+preset keeps `invert_mask: false`. Use `invert_mask: true` only when the
+background is being protected and the presenter is being blurred.
 
 For noisy masks that create patchy blur, keep only the main connected person
 region before feathering:

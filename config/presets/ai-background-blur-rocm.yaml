@@ -31,7 +31,7 @@ filters:
     mask_smoothing: 0.25
     mask_expand: 2
     mask_feather: 3
-    invert_mask: true
+    invert_mask: false
     keep_largest_component: true
     min_mask_coverage: 0.05
     max_mask_coverage: 0.80

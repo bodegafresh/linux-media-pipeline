@@ -381,7 +381,7 @@ int main() {
               "segmentation mask threshold") &&
        ok;
 
-  const lmp::ai::OnnxRuntimeEngine onnx{"model.onnx"};
+  lmp::ai::OnnxRuntimeEngine onnx{"model.onnx"};
   auto segmentation_frame =
       make_rgb_frame(2U, 1U, {10U, 10U, 10U, 240U, 240U, 240U});
   const auto inferred_mask = onnx.segment_person(segmentation_frame);

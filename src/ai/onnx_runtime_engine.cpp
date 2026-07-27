@@ -78,10 +78,16 @@ public:
 
   [[nodiscard]] bool ready() const noexcept { return ready_; }
 
-  [[nodiscard]] SegmentationMask
-  segment_person(const frame::Frame &frame) const {
+  [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     if (!ready_ || !session_.has_value()) {
       return fallback_segment_person(frame);
+    }
+    ++frame_index_;
+    if (cached_mask_.has_value() && inference_interval_ > 1U &&
+        ((frame_index_ - 1U) % inference_interval_) != 0U &&
+        cached_mask_->width() == frame.width() &&
+        cached_mask_->height() == frame.height()) {
+      return *cached_mask_;
     }
 
     const auto input_height = static_cast<std::uint32_t>(input_shape_[2]);
@@ -154,7 +160,14 @@ public:
         mask.push_back(value >= 0.5F ? 255U : 0U);
       }
     }
-    return SegmentationMask{frame.width(), frame.height(), std::move(mask)};
+    auto current =
+        SegmentationMask{frame.width(), frame.height(), std::move(mask)};
+    if (cached_mask_.has_value() && cached_mask_->width() == current.width() &&
+        cached_mask_->height() == current.height()) {
+      current = current.blend_with(*cached_mask_, mask_smoothing_);
+    }
+    cached_mask_ = current;
+    return current;
   }
 
 private:
@@ -162,15 +175,18 @@ private:
   Ort::SessionOptions session_options_;
   Ort::AllocatorWithDefaultOptions allocator_;
   std::optional<Ort::Session> session_;
-  Ort::AllocatedStringPtr input_name_{nullptr};
-  Ort::AllocatedStringPtr output_name_{nullptr};
+  Ort::AllocatedStringPtr input_name_;
+  Ort::AllocatedStringPtr output_name_;
   std::array<std::int64_t, 4> input_shape_;
+  std::optional<SegmentationMask> cached_mask_;
+  std::uint64_t frame_index_ = 0;
+  std::uint32_t inference_interval_ = 3;
+  double mask_smoothing_ = 0.70;
   bool ready_ = false;
 #else
   explicit Impl(const std::string &) {}
   [[nodiscard]] bool ready() const noexcept { return false; }
-  [[nodiscard]] SegmentationMask
-  segment_person(const frame::Frame &frame) const {
+  [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     return fallback_segment_person(frame);
   }
 #endif
@@ -195,8 +211,7 @@ bool OnnxRuntimeEngine::available() const noexcept {
   return impl_ != nullptr && impl_->ready();
 }
 
-SegmentationMask
-OnnxRuntimeEngine::segment_person(const frame::Frame &frame) const {
+SegmentationMask OnnxRuntimeEngine::segment_person(const frame::Frame &frame) {
   return impl_->segment_person(frame);
 }
 

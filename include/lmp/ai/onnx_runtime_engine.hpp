@@ -20,7 +20,7 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] bool available() const noexcept override;
   [[nodiscard]] SegmentationMask
-  segment_person(const frame::Frame &frame) const override;
+  segment_person(const frame::Frame &frame) override;
   [[nodiscard]] std::string_view model_path() const noexcept;
 
 private:

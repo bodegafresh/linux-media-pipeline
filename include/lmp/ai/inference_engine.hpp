@@ -14,7 +14,7 @@ public:
   [[nodiscard]] virtual std::string_view name() const noexcept = 0;
   [[nodiscard]] virtual bool available() const noexcept = 0;
   [[nodiscard]] virtual SegmentationMask
-  segment_person(const frame::Frame &frame) const = 0;
+  segment_person(const frame::Frame &frame) = 0;
 };
 
 } // namespace lmp::ai

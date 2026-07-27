@@ -32,14 +32,17 @@ filter_backend_active=opencl
   the binary and system runtime support it.
 - `config/presets/ai-presenter.yaml`: auto-framing and OpenCL color cleanup for
   tutorial/meeting framing.
-- `config/presets/ai-background-blur.yaml`: auto-framing plus fused OpenCL
-  background blur and color cleanup, with CPU fallback.
+- `config/presets/ai-background-blur.yaml`: CPU ONNX person segmentation plus
+  fused OpenCL background blur, auto-framing, compositing, and color cleanup.
+- `config/presets/ai-background-blur-rocm.yaml`: experimental ROCm inference
+  preset for provider/model diagnostics, not the default live path.
 - `config/presets/background-blur.yaml`: fused OpenCL background blur plus light
   contrast.
 - `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
 
 For calls, prefer `ai-presenter.yaml` when framing matters and
-`ai-background-blur.yaml` when your GPU can keep up. Filters such as `sharpen`,
+`ai-background-blur.yaml` when you want AI background blur with GPU-accelerated
+OpenCL postprocessing. Filters such as `sharpen`,
 `sobel`, `histogram` overlays, and text overlays are CPU-heavy and can add
 latency at 1280x720.
 

@@ -145,10 +145,11 @@ active backend line will say `filter_backend_active=cpu`.
 Use `config/presets/ai-presenter.yaml` for tutorial/meeting framing: it crops
 toward the detected person and applies light OpenCL color cleanup. Use
 `config/presets/ai-background-blur.yaml` when you also want background blur; that
-preset uses an ONNX person-segmentation mask when
-`assets/models/person-segmentation.onnx` exists, fuses blur, auto-framing, and
-color cleanup in the OpenCL blur filter, and falls back to a centered mask if the
-model is missing.
+preset uses CPU ONNX person segmentation from `assets/models/pphumanseg.onnx`
+and still uses the AMD GPU through OpenCL for blur, compositing, auto-framing,
+and color cleanup. The ROCm preset remains available for diagnostics, but it is
+not the recommended live path unless static-frame diagnostics show ROCm matches
+CPU for the selected model.
 
 ## USB Camera
 
@@ -247,7 +248,7 @@ LMP_HAS_ONNXRUNTIME=ON
 background_blur_backend_active=opencl
 background_blur_mask_active=onnx
 onnx_runtime_available_providers=[CPUExecutionProvider]
-onnx_runtime_provider_requested=auto
+onnx_runtime_provider_requested=cpu
 onnx_runtime_provider_active=CPUExecutionProvider
 onnx_runtime_provider_fallback=false
 openvino_available_devices=[CPU]
@@ -265,16 +266,18 @@ If it prints `background_blur_mask_active=onnx_unavailable_center`,
 `background_blur_mask_active=center`, the runtime is not using a real model yet;
 check that the model file exists, that Fedora installed `onnxruntime` and
 `onnxruntime-devel`, and that the model input/output shape is compatible.
-`./scripts/stream.sh install-model` installs the preferred ONNX Runtime model
-and its external `.data` weights file when required.
+`./scripts/stream.sh install-model all` installs the preferred ONNX Runtime
+models and any external `.data` weights file when required.
 
 The `provider` value in the preset can be `auto`, `cpu`, `migraphx`, `rocm`, or
 `openvino`. `auto` requests `MIGraphXExecutionProvider` only when the active
 ONNX Runtime build enumerates it; otherwise it keeps inference on
 `CPUExecutionProvider` while OpenCL handles the GPU blur. Fedora's ROCm package
 may expose `ROCMExecutionProvider` instead of MIGraphX; use `provider: rocm`
-explicitly for that path. `openvino` is supported as an explicit CPU inference
-path on this AMD workstation and must not be treated as AMD GPU inference.
+explicitly only for diagnostics or after `--segment-diagnostics` proves that
+ROCm produces a mask close to CPU for the same model. `openvino` is supported as
+an explicit CPU inference path on this AMD workstation and must not be treated
+as AMD GPU inference.
 
 Inspect providers with:
 

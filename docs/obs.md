@@ -73,6 +73,7 @@ background_blur_backend_active=opencl
 background_blur_mask_active=onnx
 onnx_runtime_provider_active=CPUExecutionProvider
 onnx_runtime_provider_fallback=false
+background_processing_backend=opencl
 ```
 
 For a tuning pass, add stats:
@@ -86,7 +87,7 @@ Use the reported FPS and frame times to tune `inference_interval` and
 
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because
-`assets/models/person-segmentation.onnx` is missing or incompatible.
+`assets/models/pphumanseg.onnx` is missing or incompatible.
 
 Recoverable FFmpeg startup logs are suppressed by default to keep the important
 runtime lines visible. For decoder troubleshooting, opt in per command:

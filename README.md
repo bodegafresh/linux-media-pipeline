@@ -128,6 +128,10 @@ Run with a filter preset:
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/recording-background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-presenter.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur-performance.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-color.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-image.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-video.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/debug.yaml
 ```
@@ -150,6 +154,11 @@ and still uses the AMD GPU through OpenCL for blur, compositing, auto-framing,
 and color cleanup. The ROCm preset remains available for diagnostics, but it is
 not the recommended live path unless static-frame diagnostics show ROCm matches
 CPU for the selected model.
+
+For background replacement, put static images, GIFs, or videos under
+`assets/backgrounds/` and set `background_path` in the matching preset. FFmpeg
+does the media decode, so common formats such as PNG, JPG, GIF, MP4, and WebM
+are accepted when your FFmpeg build supports them.
 
 ## USB Camera
 

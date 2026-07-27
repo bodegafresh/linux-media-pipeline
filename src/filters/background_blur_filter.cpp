@@ -1,10 +1,12 @@
 #include "lmp/filters/background_blur_filter.hpp"
 
 #include "lmp/ai/onnx_runtime_engine.hpp"
+#include "lmp/decoder/ffmpeg_decoder.hpp"
 
 #include "spatial_filter.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +14,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -35,6 +38,7 @@ const char *background_blur_kernel_source() {
 __kernel void background_blur(__global const uchar *input,
                               __global uchar *output,
                               __global const uchar *mask,
+                              __global const uchar *background,
                               const uint width,
                               const uint height,
                               const uint stride,
@@ -55,7 +59,8 @@ __kernel void background_blur(__global const uchar *input,
                               const uint mask_width_px,
                               const uint mask_height_px,
                               const float mask_width,
-                              const float mask_height) {
+                              const float mask_height,
+                              const uint background_mode) {
   const uint x = get_global_id(0);
   const uint y = get_global_id(1);
   if (x >= width || y >= height) {
@@ -90,6 +95,15 @@ __kernel void background_blur(__global const uchar *input,
   float out_blue = blue;
 
   if (foreground_alpha < 1.0f) {
+    float blurred_red = red;
+    float blurred_green = green;
+    float blurred_blue = blue;
+    if (background_mode == 1U) {
+      const uint background_base = (y * width * 3U) + (x * 3U);
+      blurred_red = (float)background[background_base];
+      blurred_green = (float)background[background_base + 1U];
+      blurred_blue = (float)background[background_base + 2U];
+    } else {
     uint count = 0;
     uint red_sum = 0;
     uint green_sum = 0;
@@ -107,9 +121,10 @@ __kernel void background_blur(__global const uchar *input,
         ++count;
       }
     }
-    const float blurred_red = (float)((red_sum + (count / 2U)) / count);
-    const float blurred_green = (float)((green_sum + (count / 2U)) / count);
-    const float blurred_blue = (float)((blue_sum + (count / 2U)) / count);
+      blurred_red = (float)((red_sum + (count / 2U)) / count);
+      blurred_green = (float)((green_sum + (count / 2U)) / count);
+      blurred_blue = (float)((blue_sum + (count / 2U)) / count);
+    }
     out_red = (red * foreground_alpha) + (blurred_red * (1.0f - foreground_alpha));
     out_green = (green * foreground_alpha) + (blurred_green * (1.0f - foreground_alpha));
     out_blue = (blue * foreground_alpha) + (blurred_blue * (1.0f - foreground_alpha));
@@ -601,6 +616,35 @@ cl_uint opencl_mask_mode(std::string_view mode) {
 }
 #endif
 
+std::array<std::uint8_t, 3> parse_rgb_color(std::string_view value) {
+  auto text = std::string{value};
+  if (!text.empty() && (text.front() == '#' || text.front() == 'x' ||
+                        text.front() == 'X')) {
+    text.erase(text.begin());
+  }
+  if (text.size() != 6U) {
+    throw std::invalid_argument("background_color must use #RRGGBB");
+  }
+  auto component = [&text](std::size_t offset) {
+    return static_cast<std::uint8_t>(
+        std::stoul(text.substr(offset, 2U), nullptr, 16));
+  };
+  return {component(0U), component(2U), component(4U)};
+}
+
+std::vector<std::uint8_t>
+solid_background(std::uint32_t width, std::uint32_t height,
+                 const std::array<std::uint8_t, 3> &color) {
+  std::vector<std::uint8_t> pixels;
+  pixels.resize(static_cast<std::size_t>(width) * height * 3U);
+  for (std::size_t index = 0; index < pixels.size(); index += 3U) {
+    pixels[index] = color[0];
+    pixels[index + 1U] = color[1];
+    pixels[index + 2U] = color[2];
+  }
+  return pixels;
+}
+
 } // namespace
 
 BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
@@ -635,7 +679,9 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     bool allow_provider_fallback, std::string openvino_device,
     std::uint32_t mask_expand, std::uint32_t mask_feather, bool invert_mask,
     bool keep_largest_component, double min_mask_coverage,
-    double max_mask_coverage, double hint_y_offset)
+    double max_mask_coverage, double hint_y_offset,
+    std::string background_mode, std::string background_path,
+    std::string background_color)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -652,7 +698,11 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       mask_feather_(mask_feather), invert_mask_(invert_mask),
       keep_largest_component_(keep_largest_component),
       min_mask_coverage_(min_mask_coverage),
-      max_mask_coverage_(max_mask_coverage), onnx_error_reported_(false) {
+      max_mask_coverage_(max_mask_coverage),
+      background_mode_(std::move(background_mode)),
+      background_path_(std::move(background_path)),
+      background_color_(std::move(background_color)),
+      onnx_error_reported_(false) {
   static_cast<void>(hint_y_offset);
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
@@ -714,6 +764,17 @@ BackgroundBlurFilter::BackgroundBlurFilter(
   if (mask_smoothing_ < 0.0 || mask_smoothing_ > 0.95) {
     throw std::invalid_argument(
         "background_blur mask_smoothing must be in [0, 0.95]");
+  }
+  if (background_mode_ != "blur" && background_mode_ != "color" &&
+      background_mode_ != "image" && background_mode_ != "video") {
+    throw std::invalid_argument(
+        "background_blur background_mode must be blur, color, image, or "
+        "video");
+  }
+  if ((background_mode_ == "image" || background_mode_ == "video") &&
+      background_path_.empty()) {
+    throw std::invalid_argument(
+        "background_blur background_path is required for image/video mode");
   }
 }
 
@@ -957,6 +1018,53 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   }
 }
 
+std::vector<std::uint8_t>
+BackgroundBlurFilter::background_pixels(const frame::Frame &frame) const {
+  if (background_mode_ == "blur") {
+    return {};
+  }
+  const auto fallback = [this, &frame] {
+    return solid_background(frame.width(), frame.height(),
+                            parse_rgb_color(background_color_));
+  };
+  if (background_mode_ == "color") {
+    return fallback();
+  }
+  if (background_mode_ == "image" && !static_background_.empty()) {
+    return static_background_;
+  }
+  try {
+    if (background_decoder_ == nullptr) {
+      background_decoder_ = std::make_unique<lmp::decoder::FfmpegDecoder>(
+          background_path_, frame.width(), frame.height());
+    }
+    auto background = background_decoder_->read_frame();
+    auto pixels = std::vector<std::uint8_t>{background.data().begin(),
+                                            background.data().end()};
+    if (background_mode_ == "image") {
+      static_background_ = pixels;
+    }
+    background_error_.clear();
+    return pixels;
+  } catch (const std::exception &error) {
+    background_error_ = error.what();
+    if (background_mode_ == "video") {
+      background_decoder_.reset();
+      try {
+        background_decoder_ = std::make_unique<lmp::decoder::FfmpegDecoder>(
+            background_path_, frame.width(), frame.height());
+        auto background = background_decoder_->read_frame();
+        background_error_.clear();
+        return std::vector<std::uint8_t>{background.data().begin(),
+                                         background.data().end()};
+      } catch (const std::exception &retry_error) {
+        background_error_ = retry_error.what();
+      }
+    }
+    return fallback();
+  }
+}
+
 void BackgroundBlurFilter::process(frame::Frame &frame) const {
   frame.metadata()["background_blur_radius"] = std::to_string(radius_);
   if (backend_ == "opencl" && process_opencl(frame)) {
@@ -986,6 +1094,13 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
 
   detail::apply_box_blur(frame, radius_);
   const auto blurred = detail::read_packed_rgb(frame);
+  const auto replacement_background = background_pixels(frame);
+  if (background_mode_ != "blur") {
+    frame.metadata()["background_replacement_mode"] = background_mode_;
+    if (!background_error_.empty()) {
+      frame.metadata()["background_replacement_error"] = background_error_;
+    }
+  }
   std::vector<detail::RgbPixel> output;
   output.reserve(original.size());
 
@@ -1004,13 +1119,19 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
            static_cast<double>(foreground_threshold_)) /
               (255.0 - static_cast<double>(foreground_threshold_)),
           0.0, 1.0);
+      const auto background_pixel =
+          replacement_background.empty()
+              ? blurred[index]
+              : detail::RgbPixel{replacement_background[index * 3U],
+                                 replacement_background[(index * 3U) + 1U],
+                                 replacement_background[(index * 3U) + 2U]};
       auto pixel = detail::RgbPixel{
           detail::clamp_to_byte((original[index].red * alpha) +
-                                (blurred[index].red * (1.0 - alpha))),
+                                (background_pixel.red * (1.0 - alpha))),
           detail::clamp_to_byte((original[index].green * alpha) +
-                                (blurred[index].green * (1.0 - alpha))),
+                                (background_pixel.green * (1.0 - alpha))),
           detail::clamp_to_byte((original[index].blue * alpha) +
-                                (blurred[index].blue * (1.0 - alpha)))};
+                                (background_pixel.blue * (1.0 - alpha)))};
       auto red = ((pixel.red - 128.0) * contrast_) + 128.0 + brightness_;
       auto green = ((pixel.green - 128.0) * contrast_) + 128.0 + brightness_;
       auto blue = ((pixel.blue - 128.0) * contrast_) + 128.0 + brightness_;
@@ -1089,6 +1210,25 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
     clReleaseMemObject(input);
     return false;
   }
+  const auto replacement_background = background_pixels(frame);
+  const auto background_values =
+      replacement_background.empty() ? fallback_mask : replacement_background;
+  cl_mem background_buffer = clCreateBuffer(
+      resources.context(), CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+      background_values.size(),
+      const_cast<std::uint8_t *>(background_values.data()), &error);
+  if (error != CL_SUCCESS || background_buffer == nullptr) {
+    clReleaseMemObject(mask_buffer);
+    clReleaseMemObject(output);
+    clReleaseMemObject(input);
+    return false;
+  }
+  if (background_mode_ != "blur") {
+    frame.metadata()["background_replacement_mode"] = background_mode_;
+    if (!background_error_.empty()) {
+      frame.metadata()["background_replacement_error"] = background_error_;
+    }
+  }
 
   const auto width = static_cast<cl_uint>(frame.width());
   const auto height = static_cast<cl_uint>(frame.height());
@@ -1141,27 +1281,31 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   error = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
   error |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &output);
   error |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &mask_buffer);
-  error |= clSetKernelArg(kernel, 3, sizeof(cl_uint), &width);
-  error |= clSetKernelArg(kernel, 4, sizeof(cl_uint), &height);
-  error |= clSetKernelArg(kernel, 5, sizeof(cl_uint), &stride);
-  error |= clSetKernelArg(kernel, 6, sizeof(cl_uint), &layout.pixel_size);
-  error |= clSetKernelArg(kernel, 7, sizeof(cl_uint), &layout.red_offset);
-  error |= clSetKernelArg(kernel, 8, sizeof(cl_uint), &layout.green_offset);
-  error |= clSetKernelArg(kernel, 9, sizeof(cl_uint), &layout.blue_offset);
-  error |= clSetKernelArg(kernel, 10, sizeof(cl_uint), &radius);
-  error |= clSetKernelArg(kernel, 11, sizeof(cl_uchar), &threshold);
-  error |= clSetKernelArg(kernel, 12, sizeof(float), &brightness);
-  error |= clSetKernelArg(kernel, 13, sizeof(float), &contrast);
-  error |= clSetKernelArg(kernel, 14, sizeof(float), &saturation);
-  error |= clSetKernelArg(kernel, 15, sizeof(cl_uint), &cl_crop_x);
-  error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &cl_crop_y);
-  error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &cl_crop_width);
-  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &cl_crop_height);
-  error |= clSetKernelArg(kernel, 19, sizeof(cl_uint), &mask_mode);
-  error |= clSetKernelArg(kernel, 20, sizeof(cl_uint), &mask_width_arg);
-  error |= clSetKernelArg(kernel, 21, sizeof(cl_uint), &mask_height_arg);
-  error |= clSetKernelArg(kernel, 22, sizeof(float), &mask_width);
-  error |= clSetKernelArg(kernel, 23, sizeof(float), &mask_height);
+  const auto background_mode =
+      static_cast<cl_uint>(background_mode_ == "blur" ? 0U : 1U);
+  error |= clSetKernelArg(kernel, 3, sizeof(cl_mem), &background_buffer);
+  error |= clSetKernelArg(kernel, 4, sizeof(cl_uint), &width);
+  error |= clSetKernelArg(kernel, 5, sizeof(cl_uint), &height);
+  error |= clSetKernelArg(kernel, 6, sizeof(cl_uint), &stride);
+  error |= clSetKernelArg(kernel, 7, sizeof(cl_uint), &layout.pixel_size);
+  error |= clSetKernelArg(kernel, 8, sizeof(cl_uint), &layout.red_offset);
+  error |= clSetKernelArg(kernel, 9, sizeof(cl_uint), &layout.green_offset);
+  error |= clSetKernelArg(kernel, 10, sizeof(cl_uint), &layout.blue_offset);
+  error |= clSetKernelArg(kernel, 11, sizeof(cl_uint), &radius);
+  error |= clSetKernelArg(kernel, 12, sizeof(cl_uchar), &threshold);
+  error |= clSetKernelArg(kernel, 13, sizeof(float), &brightness);
+  error |= clSetKernelArg(kernel, 14, sizeof(float), &contrast);
+  error |= clSetKernelArg(kernel, 15, sizeof(float), &saturation);
+  error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &cl_crop_x);
+  error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &cl_crop_y);
+  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &cl_crop_width);
+  error |= clSetKernelArg(kernel, 19, sizeof(cl_uint), &cl_crop_height);
+  error |= clSetKernelArg(kernel, 20, sizeof(cl_uint), &mask_mode);
+  error |= clSetKernelArg(kernel, 21, sizeof(cl_uint), &mask_width_arg);
+  error |= clSetKernelArg(kernel, 22, sizeof(cl_uint), &mask_height_arg);
+  error |= clSetKernelArg(kernel, 23, sizeof(float), &mask_width);
+  error |= clSetKernelArg(kernel, 24, sizeof(float), &mask_height);
+  error |= clSetKernelArg(kernel, 25, sizeof(cl_uint), &background_mode);
 
   const std::size_t global_work_size[] = {frame.width(), frame.height()};
   if (error == CL_SUCCESS) {
@@ -1176,6 +1320,7 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   }
 
   clReleaseMemObject(output);
+  clReleaseMemObject(background_buffer);
   clReleaseMemObject(mask_buffer);
   clReleaseMemObject(input);
   if (error == CL_SUCCESS) {

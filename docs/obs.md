@@ -89,6 +89,18 @@ If the stream drifts behind audio, use the lighter preset:
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur-performance.yaml --stats-every 5
 ```
 
+For background replacement in OBS, keep the same V4L2 source and switch only the
+preset:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-color.yaml --stats-every 5
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-image.yaml --stats-every 5
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-video.yaml --stats-every 5
+```
+
+Place images, GIFs, or videos under `assets/backgrounds/` and update
+`background_path` in the preset.
+
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because
 `assets/models/pphumanseg.onnx` is missing or incompatible.

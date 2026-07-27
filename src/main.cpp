@@ -433,6 +433,10 @@ public:
     report_once(metadata, "background_processing_device",
                 "background_processing_device");
     report_once(metadata, "background_blur_radius", "background_blur_radius");
+    report_once(metadata, "background_replacement_mode",
+                "background_replacement_mode");
+    report_once(metadata, "background_replacement_error",
+                "background_replacement_error");
   }
 
 private:

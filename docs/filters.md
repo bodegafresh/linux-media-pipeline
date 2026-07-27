@@ -15,6 +15,9 @@ Run with a preset:
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-presenter.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-color.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-image.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-video.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml
 ```
 
@@ -39,6 +42,12 @@ filter_backend_active=opencl
   when recording/streaming.
 - `config/presets/ai-background-blur-rocm.yaml`: experimental ROCm inference
   preset for provider/model diagnostics, not the default live path.
+- `config/presets/ai-background-color.yaml`: replaces the background with a
+  solid color using the same ONNX person mask.
+- `config/presets/ai-background-image.yaml`: replaces the background with a
+  static image from `assets/backgrounds/static-background.png`.
+- `config/presets/ai-background-video.yaml`: replaces the background with a
+  looping video or GIF from `assets/backgrounds/animated-background.mp4`.
 - `config/presets/background-blur.yaml`: fused OpenCL background blur plus light
   contrast.
 - `config/presets/debug.yaml`: FPS overlay and histogram metadata for validation.
@@ -50,6 +59,18 @@ reports frequent `dropped_frames`, switch to
 `ai-background-blur-performance.yaml`. Filters such as `sharpen`,
 `sobel`, `histogram` overlays, and text overlays are CPU-heavy and can add
 latency at 1280x720.
+
+`background_blur` also supports background replacement:
+
+```yaml
+background_mode: blur   # blur, color, image, or video
+background_color: x111827
+background_path: assets/backgrounds/static-background.png
+```
+
+Use `background_mode: video` for MP4/WebM loops or GIF files. When a background
+asset cannot be loaded, the filter falls back to `background_color` and reports
+`background_replacement_error=...`.
 
 The CLI reports both the requested backend and the backend used by the first
 processed frame:
@@ -78,7 +99,7 @@ onnx_runtime_model=input_name=image input_rank=4 input_dims=[1x3x256x256] ...
 ```
 
 That line means `background_blur` is using the real
-`assets/models/person-segmentation.onnx` model through ONNX Runtime. If it says
+`assets/models/pphumanseg.onnx` model through ONNX Runtime. If it says
 `onnx_unavailable_center` or `center`, the stream is still usable, but it is
 using the fixed fallback mask instead of true person segmentation.
 The provider lines show what ONNX Runtime actually selected. A fallback of

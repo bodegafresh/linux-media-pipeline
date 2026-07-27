@@ -2,6 +2,7 @@
 
 #include "lmp/ai/onnx_runtime_engine.hpp"
 #include "lmp/ai/segmentation_mask.hpp"
+#include "lmp/decoder/ffmpeg_decoder.hpp"
 #include "lmp/filters/video_filter.hpp"
 
 #include <array>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace lmp::filters {
 
@@ -33,7 +35,10 @@ public:
                        std::string openvino_device, std::uint32_t mask_expand,
                        std::uint32_t mask_feather, bool invert_mask,
                        bool keep_largest_component, double min_mask_coverage,
-                       double max_mask_coverage, double hint_y_offset);
+                       double max_mask_coverage, double hint_y_offset,
+                       std::string background_mode = "blur",
+                       std::string background_path = "",
+                       std::string background_color = "#1b1f2a");
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -43,6 +48,8 @@ private:
   [[nodiscard]] bool process_opencl(frame::Frame &frame) const;
   [[nodiscard]] std::optional<ai::SegmentationMask>
   person_mask(frame::Frame &frame) const;
+  [[nodiscard]] std::vector<std::uint8_t>
+  background_pixels(const frame::Frame &frame) const;
 
   std::uint32_t radius_;
   std::uint8_t foreground_threshold_;
@@ -71,6 +78,12 @@ private:
   bool keep_largest_component_;
   double min_mask_coverage_;
   double max_mask_coverage_;
+  std::string background_mode_;
+  std::string background_path_;
+  std::string background_color_;
+  mutable std::unique_ptr<lmp::decoder::FfmpegDecoder> background_decoder_;
+  mutable std::vector<std::uint8_t> static_background_;
+  mutable std::string background_error_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
   mutable std::optional<ai::SegmentationMask> last_good_person_mask_;
   mutable std::uint32_t last_good_person_mask_reuse_count_ = 0;

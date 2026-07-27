@@ -115,6 +115,9 @@ lets the blur keep a softer body-shaped foreground.
 Values near `1.0` mean the model is classifying almost the whole frame as
 foreground, so little or no background blur will be visible. Values around
 `0.20` to `0.55` are usually more plausible for a seated presenter.
+If `segmentation_mask_coverage_refined=1.000000`, raise
+`foreground_threshold` or reduce `mask_expand`; otherwise the entire frame is
+treated as protected foreground.
 
 If the model output uses the opposite polarity, set:
 

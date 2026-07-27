@@ -29,8 +29,8 @@ filters:
     output_shape: 1x1x256x256
     inference_interval: 3
     mask_smoothing: 0.25
-    mask_expand: 2
-    mask_feather: 3
+    mask_expand: 1
+    mask_feather: 2
     invert_mask: false
     keep_largest_component: true
     min_mask_coverage: 0.05
@@ -39,7 +39,7 @@ filters:
     mask_width: 0.78
     mask_height: 1.08
     radius: 7
-    foreground_threshold: 96
+    foreground_threshold: 180
     brightness: 2
     contrast: 1.04
     saturation: 1.03

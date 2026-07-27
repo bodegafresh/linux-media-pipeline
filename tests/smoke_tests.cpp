@@ -422,6 +422,15 @@ int main() {
                                             145U, 145U, 145U},
               "background blur preserves foreground") &&
        ok;
+  auto invalid_background_blur = false;
+  try {
+    lmp::filters::BackgroundBlurFilter{1U, 255U}.process(background_blur);
+  } catch (const std::invalid_argument &) {
+    invalid_background_blur = true;
+  }
+  ok = expect(invalid_background_blur,
+              "background blur rejects opaque threshold") &&
+       ok;
 
   auto auto_frame = make_rgb_frame(
       6U, 4U,

@@ -26,8 +26,8 @@ filters:
     allow_provider_fallback: true
     input_shape: 1x3x256x256
     output_shape: 1x1x256x256
-    inference_interval: 3
-    mask_smoothing: 0.70
+    inference_interval: 2
+    mask_smoothing: 0.55
     mask_expand: 1
     mask_feather: 4
     fallback_mask_mode: tracked_center

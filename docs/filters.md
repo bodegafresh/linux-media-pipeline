@@ -78,8 +78,8 @@ The provider lines show what ONNX Runtime actually selected. A fallback of
 The AI blur preset exposes the main performance knobs:
 
 ```yaml
-inference_interval: 3
-mask_smoothing: 0.70
+inference_interval: 2
+mask_smoothing: 0.55
 mask_expand: 1
 mask_feather: 4
 fallback_mask_mode: tracked_center
@@ -94,6 +94,8 @@ lower values follow movement faster, higher values look steadier.
 `mask_expand` protects the person edge before blur is applied, while
 `mask_feather` softens the matte so the transition to the blurred background is
 less harsh.
+The ONNX mask is intentionally kept at model resolution and scaled in the GPU
+kernel; refining it at full 1280x720 is too expensive for live video.
 `fallback_mask_mode: tracked_center` keeps video usable when ONNX fails by
 tracking the crop with a lightweight foreground heuristic. `radius` controls
 background blur strength; higher values blur more but cost more GPU time.

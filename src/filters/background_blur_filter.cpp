@@ -355,6 +355,25 @@ std::optional<Bounds> mask_bounds(const ai::SegmentationMask &mask,
   return bounds;
 }
 
+Bounds scale_bounds(Bounds bounds, std::uint32_t source_width,
+                    std::uint32_t source_height, std::uint32_t target_width,
+                    std::uint32_t target_height) {
+  const auto min_x = static_cast<std::uint32_t>(
+      (static_cast<std::uint64_t>(bounds.min_x) * target_width) / source_width);
+  const auto min_y = static_cast<std::uint32_t>(
+      (static_cast<std::uint64_t>(bounds.min_y) * target_height) /
+      source_height);
+  const auto max_x = static_cast<std::uint32_t>(
+      ((static_cast<std::uint64_t>(bounds.max_x) + 1U) * target_width) /
+      source_width);
+  const auto max_y = static_cast<std::uint32_t>(
+      ((static_cast<std::uint64_t>(bounds.max_y) + 1U) * target_height) /
+      source_height);
+  return Bounds{
+      std::min(min_x, target_width - 1U), std::min(min_y, target_height - 1U),
+      std::min(max_x, target_width - 1U), std::min(max_y, target_height - 1U)};
+}
+
 Crop crop_from_bounds(Bounds bounds, std::uint32_t frame_width,
                       std::uint32_t frame_height, double target_fill,
                       double max_zoom) {
@@ -595,13 +614,20 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
   output.reserve(original.size());
 
   for (std::uint32_t y = 0; y < frame.height(); ++y) {
+    const auto mask_y = std::min(
+        (static_cast<std::uint64_t>(y) * mask->height()) / frame.height(),
+        static_cast<std::uint64_t>(mask->height() - 1U));
     for (std::uint32_t x = 0; x < frame.width(); ++x) {
       const auto index = detail::pixel_index(x, y, frame.width());
-      const auto alpha =
-          std::clamp((static_cast<double>(mask->at(x, y)) -
-                      static_cast<double>(foreground_threshold_)) /
-                         (255.0 - static_cast<double>(foreground_threshold_)),
-                     0.0, 1.0);
+      const auto mask_x = std::min(
+          (static_cast<std::uint64_t>(x) * mask->width()) / frame.width(),
+          static_cast<std::uint64_t>(mask->width() - 1U));
+      const auto alpha = std::clamp(
+          (static_cast<double>(mask->at(static_cast<std::uint32_t>(mask_x),
+                                        static_cast<std::uint32_t>(mask_y))) -
+           static_cast<double>(foreground_threshold_)) /
+              (255.0 - static_cast<double>(foreground_threshold_)),
+          0.0, 1.0);
       auto pixel = detail::RgbPixel{
           detail::clamp_to_byte((original[index].red * alpha) +
                                 (blurred[index].red * (1.0 - alpha))),
@@ -692,12 +718,16 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto saturation = static_cast<float>(saturation_);
   auto crop = Crop{0U, 0U, frame.width(), frame.height()};
   if (auto_frame_) {
-    const auto bounds =
+    auto bounds =
         mask.has_value()
             ? mask_bounds(*mask, foreground_threshold_)
             : foreground_bounds(bytes, frame.format(), strides, frame.width(),
                                 frame.height(), foreground_threshold_);
     if (bounds.has_value()) {
+      if (mask.has_value()) {
+        bounds = scale_bounds(*bounds, mask->width(), mask->height(),
+                              frame.width(), frame.height());
+      }
       crop = crop_from_bounds(*bounds, frame.width(), frame.height(),
                               target_fill_, max_zoom_);
     }

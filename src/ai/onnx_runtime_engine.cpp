@@ -311,9 +311,7 @@ public:
     }
     ++frame_index_;
     if (cached_mask_.has_value() && inference_interval_ > 1U &&
-        ((frame_index_ - 1U) % inference_interval_) != 0U &&
-        cached_mask_->width() == frame.width() &&
-        cached_mask_->height() == frame.height()) {
+        ((frame_index_ - 1U) % inference_interval_) != 0U) {
       return *cached_mask_;
     }
 
@@ -449,15 +447,10 @@ public:
     }
 
     std::vector<std::uint8_t> mask;
-    mask.reserve(static_cast<std::size_t>(frame.width()) * frame.height());
-    for (std::uint32_t y = 0; y < frame.height(); ++y) {
-      const auto mask_y = static_cast<std::uint32_t>(
-          (static_cast<std::uint64_t>(y) * mask_height) / frame.height());
-      for (std::uint32_t x = 0; x < frame.width(); ++x) {
-        const auto mask_x = static_cast<std::uint32_t>(
-            (static_cast<std::uint64_t>(x) * mask_width) / frame.width());
-        const auto mask_index =
-            filters::detail::pixel_index(mask_x, mask_y, mask_width);
+    mask.reserve(static_cast<std::size_t>(mask_width) * mask_height);
+    for (std::uint32_t y = 0; y < mask_height; ++y) {
+      for (std::uint32_t x = 0; x < mask_width; ++x) {
+        const auto mask_index = filters::detail::pixel_index(x, y, mask_width);
         const auto output_index =
             channels_last ? (mask_index * channel_count) + person_channel
                           : (static_cast<std::size_t>(person_channel) *
@@ -470,8 +463,7 @@ public:
         mask.push_back(value >= 0.5F ? 255U : 0U);
       }
     }
-    auto current =
-        SegmentationMask{frame.width(), frame.height(), std::move(mask)};
+    auto current = SegmentationMask{mask_width, mask_height, std::move(mask)};
     if (cached_mask_.has_value() && cached_mask_->width() == current.width() &&
         cached_mask_->height() == current.height()) {
       current = current.blend_with(*cached_mask_, mask_smoothing_);

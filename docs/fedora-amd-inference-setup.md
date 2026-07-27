@@ -78,7 +78,8 @@ ffmpeg -y -i udp://0.0.0.0:8554 -frames:v 1 -update 1 -pix_fmt rgb24 artifacts/f
 Inspect `artifacts/segmentation-diagnostics/frame-001/report.json` and the
 `*_overlay.ppm` outputs. A usable ROCm path must produce a mask that resembles
 the CPU mask for the same model. Treat `coverage` close to `0.0` or `1.0`, or a
-large `cpu_mask_mae`, as a failed model/provider combination.
+large `cpu_mask_mae`, as a failed model/provider combination. If `model_loaded`
+is `false`, the model did not run and must not be considered for live video.
 
 The provider list must show `MIGraphXExecutionProvider` before the MIGraphX live
 preset can use AMD GPU inference. If Fedora shows `ROCMExecutionProvider`

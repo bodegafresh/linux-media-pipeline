@@ -149,6 +149,19 @@ std::string safe_artifact_name(std::string_view value) {
   return result.empty() ? "artifact" : result;
 }
 
+std::pair<std::string, std::string>
+known_segmentation_shapes(const std::filesystem::path &model_path) {
+  const auto filename = model_path.filename().string();
+  if (filename.find("pphumanseg") != std::string::npos) {
+    return {"1x3x192x192", "1x1x192x192"};
+  }
+  if (filename.find("mediapipe") != std::string::npos ||
+      filename.find("person-segmentation") != std::string::npos) {
+    return {"1x3x256x256", "1x1x256x256"};
+  }
+  return {"", ""};
+}
+
 void verify_onnx_provider(const lmp::config::AppConfig &config,
                           std::string_view provider_override) {
   auto model_path = config.ai.model_path;
@@ -703,8 +716,42 @@ void segment_diagnostics(const lmp::config::AppConfig &config,
       const auto artifact_prefix =
           model_name + "_" + safe_artifact_name(provider);
       try {
+        const auto [input_shape, output_shape] =
+            known_segmentation_shapes(model_path);
         auto engine = lmp::ai::OnnxRuntimeEngine{
-            model_path, 1U, 0.0, "", "", provider, true, "CPU"};
+            model_path, 1U, 0.0, input_shape, output_shape, provider, true,
+            "CPU"};
+        if (!engine.available()) {
+          report_entries.push_back(
+              "    {\n"
+              "      \"model\": \"" +
+              json_escape(model_path) +
+              "\",\n"
+              "      \"provider_requested\": \"" +
+              json_escape(provider) +
+              "\",\n"
+              "      \"provider_active\": \"" +
+              json_escape(engine.active_provider()) +
+              "\",\n"
+              "      \"provider_fallback\": " +
+              std::string{engine.provider_fallback() ? "true" : "false"} +
+              ",\n"
+              "      \"fallback_reason\": \"" +
+              json_escape(engine.provider_fallback_reason()) +
+              "\",\n"
+              "      \"available_providers\": \"" +
+              json_escape(engine.available_providers()) +
+              "\",\n"
+              "      \"model_loaded\": false,\n"
+              "      \"model_summary\": \"" +
+              json_escape(engine.model_summary()) +
+              "\",\n"
+              "      \"error\": \"" +
+              json_escape(engine.last_error()) +
+              "\"\n"
+              "    }");
+          continue;
+        }
         const auto started = std::chrono::steady_clock::now();
         const auto mask = engine.segment_person_blocking(frame);
         const auto elapsed = std::chrono::duration<double, std::milli>(
@@ -752,6 +799,7 @@ void segment_diagnostics(const lmp::config::AppConfig &config,
             "\",\n"
             "      \"model_summary\": \"" + json_escape(engine.model_summary()) +
             "\",\n"
+            "      \"model_loaded\": true,\n"
             "      \"coverage\": " +
             std::to_string(coverage) +
             ",\n"

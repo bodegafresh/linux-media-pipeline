@@ -91,7 +91,8 @@ The diagnostic writes `report.json`, raw `*_mask.pgm` masks, and `*_overlay.ppm`
 visual overlays. A usable GPU path should have a sane coverage value and a low
 `cpu_mask_mae` compared with the CPU mask for the same model. If ROCm coverage
 is near `0.0` or `1.0`, or `cpu_mask_mae` is large, keep that model/provider out
-of the live preset.
+of the live preset. If `model_loaded` is `false`, fix that model first; fallback
+masks are intentionally excluded from the comparison.
 
 To capture one frame directly from the GoPro UDP feed on Fedora:
 

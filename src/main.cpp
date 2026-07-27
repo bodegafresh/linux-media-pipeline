@@ -1,3 +1,4 @@
+#include "lmp/ai/onnx_runtime_engine.hpp"
 #include "lmp/capture/gopro_udp_source.hpp"
 #include "lmp/config/config_loader.hpp"
 #include "lmp/decoder/ffmpeg_decoder.hpp"
@@ -11,6 +12,8 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -33,7 +36,140 @@ void print_help() {
          "to V4L2.\n"
       << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n"
       << "  --stats-every N  Print runtime FPS/latency stats every N "
-         "seconds.\n";
+         "seconds.\n"
+      << "  --list-onnx-providers\n"
+         "                   List providers exposed by the active ONNX "
+         "Runtime build.\n"
+      << "  --verify-onnx-gpu\n"
+         "                   Run a conservative ONNX provider verification "
+         "and write artifacts/onnx-gpu-verification.json.\n"
+      << "  --onnx-provider PROVIDER\n"
+         "                   Provider for --verify-onnx-gpu: auto, cpu, "
+         "migraphx, or openvino.\n";
+}
+
+void list_onnx_providers() {
+  std::cout << "ONNX Runtime version: "
+            << lmp::ai::OnnxRuntimeEngine::runtime_version() << "\n\n";
+  std::cout << "Available providers:\n";
+  for (const auto &provider : lmp::ai::OnnxRuntimeEngine::provider_infos()) {
+    if (provider.selectable) {
+      std::cout << "  - " << provider.name << '\n';
+    }
+  }
+  std::cout << '\n';
+  for (const auto &provider : lmp::ai::OnnxRuntimeEngine::provider_infos()) {
+    if (provider.selectable) {
+      continue;
+    }
+    std::cout << provider.name << ":\n"
+              << "  compiled_in: " << (provider.compiled_in ? "true" : "false")
+              << '\n'
+              << "  selectable: " << (provider.selectable ? "true" : "false")
+              << '\n'
+              << "  reason: " << provider.unavailable_reason << '\n';
+  }
+}
+
+lmp::frame::Frame make_test_pattern(std::uint32_t width, std::uint32_t height,
+                                    std::uint32_t frame_index);
+
+bool bool_parameter(const lmp::config::FilterConfig &filter,
+                    std::string_view name, bool default_value);
+
+std::string string_parameter(const lmp::config::FilterConfig &filter,
+                             std::string_view name,
+                             std::string_view default_value);
+
+void verify_onnx_provider(const lmp::config::AppConfig &config,
+                          std::string_view provider_override) {
+  auto model_path = config.ai.model_path;
+  auto input_shape = std::string{"1x3x256x256"};
+  auto output_shape = std::string{"1x1x256x256"};
+  auto provider =
+      std::string{provider_override.empty() ? "migraphx" : provider_override};
+  auto allow_fallback = true;
+  for (const auto &filter : config.filters) {
+    if (filter.type != "background_blur") {
+      continue;
+    }
+    model_path = string_parameter(filter, "model_path", model_path);
+    input_shape = string_parameter(filter, "input_shape", input_shape);
+    output_shape = string_parameter(filter, "output_shape", output_shape);
+    allow_fallback = bool_parameter(filter, "allow_provider_fallback", true);
+  }
+
+  auto frame = make_test_pattern(1280U, 720U, 0U);
+  auto engine = lmp::ai::OnnxRuntimeEngine{
+      model_path,     1U,   0.0, input_shape, output_shape, provider,
+      allow_fallback, "CPU"};
+  const auto model_loaded = engine.available();
+  const auto warmup_runs = 5U;
+  const auto measured_runs = 20U;
+  auto successful_runs = 0U;
+  auto total_ms = 0.0;
+  auto p95_source = std::vector<double>{};
+  p95_source.reserve(measured_runs);
+
+  for (auto index = 0U; index < warmup_runs && model_loaded; ++index) {
+    static_cast<void>(engine.segment_person(frame));
+  }
+  for (auto index = 0U; index < measured_runs && model_loaded; ++index) {
+    const auto started = std::chrono::steady_clock::now();
+    const auto mask = engine.segment_person(frame);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const auto elapsed_ms =
+        std::chrono::duration<double, std::milli>(elapsed).count();
+    const auto finite_output = mask.width() > 0U && mask.height() > 0U;
+    if (finite_output) {
+      ++successful_runs;
+      total_ms += elapsed_ms;
+      p95_source.push_back(elapsed_ms);
+    }
+  }
+  std::sort(p95_source.begin(), p95_source.end());
+  const auto average_ms = successful_runs == 0U
+                              ? 0.0
+                              : total_ms / static_cast<double>(successful_runs);
+  const auto p95_ms =
+      p95_source.empty()
+          ? 0.0
+          : p95_source[std::min(
+                p95_source.size() - 1U,
+                static_cast<std::size_t>((p95_source.size() * 95U) / 100U))];
+  const auto provider_active = std::string{engine.active_provider()};
+  const auto gpu_verified = false;
+  std::filesystem::create_directories("artifacts");
+  std::ofstream report{"artifacts/onnx-gpu-verification.json"};
+  report << "{\n"
+         << "  \"onnx_runtime_version\": \""
+         << lmp::ai::OnnxRuntimeEngine::runtime_version() << "\",\n"
+         << "  \"provider_requested\": \"" << provider << "\",\n"
+         << "  \"provider_active\": \"" << provider_active << "\",\n"
+         << "  \"gpu_execution_verified\": "
+         << (gpu_verified ? "true" : "false") << ",\n"
+         << "  \"model_loaded\": " << (model_loaded ? "true" : "false") << ",\n"
+         << "  \"inference_successful\": "
+         << (successful_runs == measured_runs ? "true" : "false") << ",\n"
+         << "  \"warmup_runs\": " << warmup_runs << ",\n"
+         << "  \"measured_runs\": " << measured_runs << ",\n"
+         << "  \"successful_runs\": " << successful_runs << ",\n"
+         << "  \"average_inference_ms\": " << average_ms << ",\n"
+         << "  \"p95_inference_ms\": " << p95_ms << ",\n"
+         << "  \"fallback\": "
+         << (engine.provider_fallback() ? "true" : "false") << ",\n"
+         << "  \"fallback_reason\": \"" << engine.provider_fallback_reason()
+         << "\"\n"
+         << "}\n";
+
+  std::cout << "onnx_runtime_provider_requested=" << provider << '\n'
+            << "onnx_runtime_provider_active=" << provider_active << '\n'
+            << "onnx_runtime_provider_fallback="
+            << (engine.provider_fallback() ? "true" : "false") << '\n'
+            << "gpu_execution_verified=false\n"
+            << "average_inference_ms=" << average_ms << '\n'
+            << "p95_inference_ms=" << p95_ms << '\n'
+            << "wrote artifacts/onnx-gpu-verification.json\n";
 }
 
 std::optional<double> parse_positive_double(std::string_view value,
@@ -125,6 +261,21 @@ public:
     report_once(metadata, "onnx_runtime_provider_fallback_reason",
                 "onnx_runtime_provider_fallback_reason");
     report_once(metadata, "onnx_runtime_model", "onnx_runtime_model");
+    report_once(metadata, "openvino_available_devices",
+                "openvino_available_devices");
+    report_once(metadata, "openvino_device_requested",
+                "openvino_device_requested");
+    report_once(metadata, "openvino_device_active", "openvino_device_active");
+    report_once(metadata, "opencl_platform_active", "opencl_platform_active");
+    report_once(metadata, "opencl_device_active", "opencl_device_active");
+    report_once(metadata, "segmentation_inference_backend",
+                "segmentation_inference_backend");
+    report_once(metadata, "segmentation_inference_device",
+                "segmentation_inference_device");
+    report_once(metadata, "background_processing_backend",
+                "background_processing_backend");
+    report_once(metadata, "background_processing_device",
+                "background_processing_device");
   }
 
 private:
@@ -258,6 +409,9 @@ int main(int argc, char **argv) {
     auto check_output = false;
     auto stream_live = false;
     auto test_pattern = false;
+    auto list_providers = false;
+    auto verify_onnx_gpu = false;
+    auto onnx_provider = std::string{"migraphx"};
     auto stats_every = stats_interval_from_env();
     for (int index = 1; index < argc; ++index) {
       const auto option = std::string_view{argv[index]};
@@ -285,14 +439,32 @@ int main(int argc, char **argv) {
         stream_live = true;
       } else if (option == "--test-pattern") {
         test_pattern = true;
+      } else if (option == "--list-onnx-providers") {
+        list_providers = true;
+      } else if (option == "--verify-onnx-gpu") {
+        verify_onnx_gpu = true;
+      } else if (option == "--onnx-provider") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--onnx-provider requires a provider name");
+        }
+        onnx_provider = argv[index];
       } else {
         throw std::runtime_error("unknown option: " + std::string{option});
       }
+    }
+    if (list_providers) {
+      list_onnx_providers();
+      return 0;
     }
 
     const lmp::config::ConfigLoader loader;
     const auto config = loader.load_file(config_path);
     const auto registry = lmp::filters::create_default_registry();
+    if (verify_onnx_gpu) {
+      verify_onnx_provider(config, onnx_provider);
+      return 0;
+    }
     const auto pipeline =
         lmp::filters::FilterPipeline::from_config(config.filters, registry);
     const auto filters_active = active_filter_list(config.filters);

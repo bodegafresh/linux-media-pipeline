@@ -1,3 +1,6 @@
+# Background video replacement is not implemented yet.
+# This preset keeps the safe MIGraphX-requesting blur path until a dedicated
+# background replacement filter exists.
 capture:
   type: gopro_udp
   address: udp://0.0.0.0:8554
@@ -22,7 +25,7 @@ filters:
     max_zoom: 1.7
     mask_mode: onnx
     model_path: assets/models/person-segmentation.onnx
-    provider: auto
+    provider: migraphx
     allow_provider_fallback: true
     openvino_device: CPU
     input_shape: 1x3x256x256

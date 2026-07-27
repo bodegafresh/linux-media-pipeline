@@ -5,8 +5,16 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace lmp::ai {
+
+struct OnnxProviderInfo {
+  std::string name;
+  bool compiled_in;
+  bool selectable;
+  std::string unavailable_reason;
+};
 
 class OnnxRuntimeEngine final : public IInferenceEngine {
 public:
@@ -19,7 +27,7 @@ public:
   OnnxRuntimeEngine(std::string model_path, std::uint32_t inference_interval,
                     double mask_smoothing, std::string input_shape,
                     std::string output_shape, std::string requested_provider,
-                    bool allow_provider_fallback);
+                    bool allow_provider_fallback, std::string openvino_device);
   ~OnnxRuntimeEngine() override;
 
   OnnxRuntimeEngine(const OnnxRuntimeEngine &) = delete;
@@ -39,6 +47,11 @@ public:
   [[nodiscard]] bool provider_fallback() const noexcept;
   [[nodiscard]] std::string_view provider_fallback_reason() const noexcept;
   [[nodiscard]] std::string_view model_summary() const noexcept;
+  [[nodiscard]] std::string_view openvino_available_devices() const noexcept;
+  [[nodiscard]] std::string_view openvino_device_requested() const noexcept;
+  [[nodiscard]] std::string_view openvino_device_active() const noexcept;
+  [[nodiscard]] static std::string runtime_version();
+  [[nodiscard]] static std::vector<OnnxProviderInfo> provider_infos();
 
 private:
   class Impl;

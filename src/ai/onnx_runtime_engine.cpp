@@ -170,6 +170,9 @@ std::string canonical_provider(std::string_view provider) {
   if (provider == "openvino" || provider == "OpenVINOExecutionProvider") {
     return "OpenVINOExecutionProvider";
   }
+  if (provider == "migraphx" || provider == "MIGraphXExecutionProvider") {
+    return "MIGraphXExecutionProvider";
+  }
   return std::string{provider};
 }
 
@@ -195,6 +198,20 @@ bool provider_list_contains(const std::string &providers,
   return providers.find(provider) != std::string::npos;
 }
 
+std::vector<std::string> available_provider_names() {
+  try {
+    return Ort::GetAvailableProviders();
+  } catch (const std::exception &) {
+    return {};
+  }
+}
+
+bool provider_name_contains(const std::vector<std::string> &providers,
+                            std::string_view provider) {
+  return std::find(providers.begin(), providers.end(), provider) !=
+         providers.end();
+}
+
 bool future_is_ready(std::future<SegmentationMask> &future) {
   return future.valid() &&
          future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
@@ -213,6 +230,19 @@ void append_openvino_provider(Ort::SessionOptions &options) {
   Ort::ThrowOnError(append_provider(options, "CPU_FP32"));
 }
 
+void append_migraphx_provider(Ort::SessionOptions &options) {
+  using AppendProvider = OrtStatus *(*)(OrtSessionOptions *, int);
+  auto *raw_symbol =
+      dlsym(RTLD_DEFAULT, "OrtSessionOptionsAppendExecutionProvider_MIGraphX");
+  if (raw_symbol == nullptr) {
+    throw std::runtime_error(
+        "OrtSessionOptionsAppendExecutionProvider_MIGraphX symbol was not "
+        "loaded");
+  }
+  auto *append_provider = reinterpret_cast<AppendProvider>(raw_symbol);
+  Ort::ThrowOnError(append_provider(options, 0));
+}
+
 #endif
 
 } // namespace
@@ -222,12 +252,14 @@ public:
 #if LMP_HAS_ONNXRUNTIME
   Impl(const std::string &model_path, std::uint32_t inference_interval,
        double mask_smoothing, std::string input_shape, std::string output_shape,
-       std::string requested_provider, bool allow_provider_fallback)
+       std::string requested_provider, bool allow_provider_fallback,
+       std::string openvino_device)
       : env_(ORT_LOGGING_LEVEL_WARNING, "linux-media-pipeline"),
         session_options_{}, allocator_{}, input_shape_{1, 3, 256, 256},
         output_shape_(std::move(output_shape)),
         allow_provider_fallback_(allow_provider_fallback),
-        requested_provider_(std::move(requested_provider)) {
+        requested_provider_(std::move(requested_provider)),
+        openvino_device_requested_(std::move(openvino_device)) {
     inference_interval_ = std::max<std::uint32_t>(1U, inference_interval);
     mask_smoothing_ = std::clamp(mask_smoothing, 0.0, 0.95);
     try {
@@ -338,6 +370,15 @@ public:
   }
   [[nodiscard]] std::string_view model_summary() const noexcept {
     return model_summary_;
+  }
+  [[nodiscard]] std::string_view openvino_available_devices() const noexcept {
+    return openvino_available_devices_;
+  }
+  [[nodiscard]] std::string_view openvino_device_requested() const noexcept {
+    return openvino_device_requested_;
+  }
+  [[nodiscard]] std::string_view openvino_device_active() const noexcept {
+    return openvino_device_active_;
   }
 
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
@@ -550,12 +591,11 @@ private:
     if (requested_provider_ == "cpu") {
       return;
     }
-
     auto requested = canonical_provider(requested_provider_);
     if (requested_provider_ == "auto") {
       if (provider_list_contains(available_providers_,
-                                 "OpenVINOExecutionProvider")) {
-        requested = "OpenVINOExecutionProvider";
+                                 "MIGraphXExecutionProvider")) {
+        requested = "MIGraphXExecutionProvider";
       } else {
         return;
       }
@@ -571,14 +611,28 @@ private:
 
     try {
       if (requested == "OpenVINOExecutionProvider") {
+        if (openvino_device_requested_.empty()) {
+          openvino_device_requested_ = "CPU";
+        }
+        if (openvino_device_requested_ != "CPU") {
+          throw std::runtime_error(
+              "OpenVINO device " + openvino_device_requested_ +
+              " is not accepted unless OpenVINO enumerates it; available "
+              "devices " +
+              openvino_available_devices_);
+        }
         append_openvino_provider(session_options_);
+        active_provider_ = requested;
+        openvino_device_active_ = openvino_device_requested_;
+        return;
+      }
+      if (requested == "MIGraphXExecutionProvider") {
+        append_migraphx_provider(session_options_);
         active_provider_ = requested;
         return;
       }
       provider_fallback_ = true;
-      provider_fallback_reason_ =
-          requested + " available but activation is not enabled in this build; "
-                      "using CPUExecutionProvider";
+      provider_fallback_reason_ = requested + " is not supported by lmp";
     } catch (const std::exception &error) {
       provider_fallback_ = true;
       provider_fallback_reason_ =
@@ -615,10 +669,13 @@ private:
   std::string available_providers_ = "[]";
   std::string provider_fallback_reason_;
   std::string model_summary_;
+  std::string openvino_available_devices_ = "[CPU]";
+  std::string openvino_device_requested_ = "CPU";
+  std::string openvino_device_active_ = "CPU";
   std::string last_error_;
 #else
   Impl(const std::string &, std::uint32_t, double, std::string, std::string,
-       std::string, bool) {}
+       std::string, bool, std::string) {}
   [[nodiscard]] bool ready() const noexcept { return false; }
   [[nodiscard]] std::string_view last_error() const noexcept {
     return "ONNX Runtime support is not compiled in";
@@ -639,6 +696,15 @@ private:
   [[nodiscard]] std::string_view model_summary() const noexcept {
     return "unavailable";
   }
+  [[nodiscard]] std::string_view openvino_available_devices() const noexcept {
+    return "[]";
+  }
+  [[nodiscard]] std::string_view openvino_device_requested() const noexcept {
+    return "unavailable";
+  }
+  [[nodiscard]] std::string_view openvino_device_active() const noexcept {
+    return "unavailable";
+  }
   [[nodiscard]] SegmentationMask segment_person(const frame::Frame &frame) {
     return fallback_segment_person(frame);
   }
@@ -647,15 +713,16 @@ private:
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path)
     : model_path_(std::move(model_path)),
-      impl_(std::make_unique<Impl>(model_path_, 3U, 0.70, "", "", "auto",
-                                   true)) {}
+      impl_(std::make_unique<Impl>(model_path_, 3U, 0.70, "", "", "auto", true,
+                                   "CPU")) {}
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
                                      std::uint32_t inference_interval,
                                      double mask_smoothing)
     : model_path_(std::move(model_path)),
       impl_(std::make_unique<Impl>(model_path_, inference_interval,
-                                   mask_smoothing, "", "", "auto", true)) {}
+                                   mask_smoothing, "", "", "auto", true,
+                                   "CPU")) {}
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
                                      std::uint32_t inference_interval,
@@ -665,17 +732,20 @@ OnnxRuntimeEngine::OnnxRuntimeEngine(std::string model_path,
     : model_path_(std::move(model_path)),
       impl_(std::make_unique<Impl>(model_path_, inference_interval,
                                    mask_smoothing, std::move(input_shape),
-                                   std::move(output_shape), "auto", true)) {}
+                                   std::move(output_shape), "auto", true,
+                                   "CPU")) {}
 
 OnnxRuntimeEngine::OnnxRuntimeEngine(
     std::string model_path, std::uint32_t inference_interval,
     double mask_smoothing, std::string input_shape, std::string output_shape,
-    std::string requested_provider, bool allow_provider_fallback)
+    std::string requested_provider, bool allow_provider_fallback,
+    std::string openvino_device)
     : model_path_(std::move(model_path)),
       impl_(std::make_unique<Impl>(
           model_path_, inference_interval, mask_smoothing,
           std::move(input_shape), std::move(output_shape),
-          std::move(requested_provider), allow_provider_fallback)) {}
+          std::move(requested_provider), allow_provider_fallback,
+          std::move(openvino_device))) {}
 
 OnnxRuntimeEngine::~OnnxRuntimeEngine() = default;
 
@@ -728,6 +798,53 @@ std::string_view OnnxRuntimeEngine::provider_fallback_reason() const noexcept {
 
 std::string_view OnnxRuntimeEngine::model_summary() const noexcept {
   return impl_ == nullptr ? "unavailable" : impl_->model_summary();
+}
+
+std::string_view
+OnnxRuntimeEngine::openvino_available_devices() const noexcept {
+  return impl_ == nullptr ? "[]" : impl_->openvino_available_devices();
+}
+
+std::string_view OnnxRuntimeEngine::openvino_device_requested() const noexcept {
+  return impl_ == nullptr ? "unavailable" : impl_->openvino_device_requested();
+}
+
+std::string_view OnnxRuntimeEngine::openvino_device_active() const noexcept {
+  return impl_ == nullptr ? "unavailable" : impl_->openvino_device_active();
+}
+
+std::string OnnxRuntimeEngine::runtime_version() {
+#if LMP_HAS_ONNXRUNTIME
+  return OrtGetApiBase()->GetVersionString();
+#else
+  return "unavailable";
+#endif
+}
+
+std::vector<OnnxProviderInfo> OnnxRuntimeEngine::provider_infos() {
+  auto result = std::vector<OnnxProviderInfo>{};
+#if LMP_HAS_ONNXRUNTIME
+  const auto providers = available_provider_names();
+  for (const auto &provider : providers) {
+    result.push_back(OnnxProviderInfo{provider, true, true, ""});
+  }
+  const auto add_missing = [&](std::string name) {
+    if (!provider_name_contains(providers, name)) {
+      result.push_back(OnnxProviderInfo{
+          std::move(name), false, false,
+          "provider not included in active ONNX Runtime build"});
+    }
+  };
+  add_missing("MIGraphXExecutionProvider");
+  add_missing("OpenVINOExecutionProvider");
+  add_missing("CPUExecutionProvider");
+#else
+  result.push_back(OnnxProviderInfo{"CPUExecutionProvider", false, false,
+                                    "ONNX Runtime support is not compiled in"});
+  result.push_back(OnnxProviderInfo{"MIGraphXExecutionProvider", false, false,
+                                    "ONNX Runtime support is not compiled in"});
+#endif
+  return result;
 }
 
 } // namespace lmp::ai

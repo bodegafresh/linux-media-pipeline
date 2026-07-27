@@ -77,6 +77,10 @@ The provider lines show what ONNX Runtime actually selected. A fallback of
 `true` means the requested provider was not used.
 Fedora OpenVINO packages are installed by the dependency script, but ONNX Runtime
 must still report `OpenVINOExecutionProvider` before the pipeline can use it.
+OpenVINO inference device and OpenCL background processing device are reported
+separately. On an AMD Radeon workstation, the safe OpenVINO device is `CPU`;
+OpenVINO `GPU` must not be used unless OpenVINO itself enumerates a compatible
+Intel GPU.
 
 The AI blur preset exposes the main performance knobs:
 
@@ -88,6 +92,7 @@ mask_feather: 2
 fallback_mask_mode: tracked_center
 provider: auto
 allow_provider_fallback: true
+openvino_device: CPU
 radius: 5
 ```
 

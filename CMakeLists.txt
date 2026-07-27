@@ -42,6 +42,9 @@ if(LMP_ENABLE_OPENCL)
 endif()
 
 set(LMP_HAS_ONNXRUNTIME OFF)
+set(LMP_HAS_ONNXRUNTIME_MIGRAPHX OFF)
+set(LMP_HAS_MIGRAPHX OFF)
+set(LMP_HAS_ROCM_RUNTIME OFF)
 if(LMP_ENABLE_ONNXRUNTIME)
   if(PkgConfig_FOUND)
     pkg_check_modules(ONNXRUNTIME QUIET IMPORTED_TARGET libonnxruntime)
@@ -61,9 +64,20 @@ if(LMP_ENABLE_ONNXRUNTIME)
     endif()
   endif()
 endif()
+find_library(MIGRAPHX_LIBRARY migraphx)
+if(MIGRAPHX_LIBRARY)
+  set(LMP_HAS_MIGRAPHX ON)
+endif()
+find_library(ROCM_HSA_RUNTIME_LIBRARY hsa-runtime64)
+if(ROCM_HSA_RUNTIME_LIBRARY)
+  set(LMP_HAS_ROCM_RUNTIME ON)
+endif()
 message(STATUS "LMP_HAS_FFMPEG=${LMP_HAS_FFMPEG}")
 message(STATUS "LMP_HAS_OPENCL=${LMP_HAS_OPENCL}")
 message(STATUS "LMP_HAS_ONNXRUNTIME=${LMP_HAS_ONNXRUNTIME}")
+message(STATUS "LMP_HAS_ONNXRUNTIME_MIGRAPHX=${LMP_HAS_ONNXRUNTIME_MIGRAPHX}")
+message(STATUS "LMP_HAS_MIGRAPHX=${LMP_HAS_MIGRAPHX}")
+message(STATUS "LMP_HAS_ROCM_RUNTIME=${LMP_HAS_ROCM_RUNTIME}")
 
 add_library(lmp_core
   src/ai/onnx_runtime_engine.cpp
@@ -116,6 +130,9 @@ target_compile_definitions(lmp_core PUBLIC
   LMP_HAS_FFMPEG=$<BOOL:${LMP_HAS_FFMPEG}>
   LMP_HAS_OPENCL=$<BOOL:${LMP_HAS_OPENCL}>
   LMP_HAS_ONNXRUNTIME=$<BOOL:${LMP_HAS_ONNXRUNTIME}>
+  LMP_HAS_ONNXRUNTIME_MIGRAPHX=$<BOOL:${LMP_HAS_ONNXRUNTIME_MIGRAPHX}>
+  LMP_HAS_MIGRAPHX=$<BOOL:${LMP_HAS_MIGRAPHX}>
+  LMP_HAS_ROCM_RUNTIME=$<BOOL:${LMP_HAS_ROCM_RUNTIME}>
 )
 if(LMP_HAS_FFMPEG)
   target_link_libraries(lmp_core PUBLIC PkgConfig::FFMPEG)
@@ -130,6 +147,7 @@ if(LMP_HAS_ONNXRUNTIME)
     target_include_directories(lmp_core SYSTEM PUBLIC "${ONNXRUNTIME_INCLUDE_DIR}")
     target_link_libraries(lmp_core PUBLIC "${ONNXRUNTIME_LIBRARY}")
   endif()
+  target_link_libraries(lmp_core PUBLIC ${CMAKE_DL_LIBS})
 endif()
 lmp_apply_compiler_options(lmp_core)
 

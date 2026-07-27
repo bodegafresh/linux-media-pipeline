@@ -28,7 +28,8 @@ public:
                        double mask_smoothing, std::string fallback_mask_mode,
                        std::string input_shape, std::string output_shape,
                        std::string requested_provider,
-                       bool allow_provider_fallback, std::uint32_t mask_expand,
+                       bool allow_provider_fallback,
+                       std::string openvino_device, std::uint32_t mask_expand,
                        std::uint32_t mask_feather);
 
   void process(frame::Frame &frame) const override;
@@ -60,6 +61,7 @@ private:
   std::string output_shape_;
   std::string requested_provider_;
   bool allow_provider_fallback_;
+  std::string openvino_device_;
   std::uint32_t mask_expand_;
   std::uint32_t mask_feather_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;

@@ -174,6 +174,7 @@ public:
       const auto status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1,
                                          &device_, &device_count);
       if (status == CL_SUCCESS && device_count > 0U) {
+        platform_ = platform;
         break;
       }
       device_ = nullptr;
@@ -222,6 +223,8 @@ public:
       return;
     }
     ready_ = true;
+    platform_name_ = read_platform_name();
+    device_name_ = read_device_name();
   }
 
   OpenClBackgroundBlurResources(const OpenClBackgroundBlurResources &) = delete;
@@ -234,8 +237,56 @@ public:
   [[nodiscard]] cl_context context() const noexcept { return context_; }
   [[nodiscard]] cl_command_queue queue() const noexcept { return queue_; }
   [[nodiscard]] cl_kernel kernel() const noexcept { return kernel_; }
+  [[nodiscard]] std::string_view platform_name() const noexcept {
+    return platform_name_;
+  }
+  [[nodiscard]] std::string_view device_name() const noexcept {
+    return device_name_;
+  }
 
 private:
+  [[nodiscard]] std::string read_platform_name() const {
+    if (platform_ == nullptr) {
+      return "unknown";
+    }
+    std::size_t size = 0;
+    if (clGetPlatformInfo(platform_, CL_PLATFORM_NAME, 0, nullptr, &size) !=
+            CL_SUCCESS ||
+        size == 0U) {
+      return "unknown";
+    }
+    std::string value(size, '\0');
+    if (clGetPlatformInfo(platform_, CL_PLATFORM_NAME, value.size(),
+                          value.data(), nullptr) != CL_SUCCESS) {
+      return "unknown";
+    }
+    if (!value.empty() && value.back() == '\0') {
+      value.pop_back();
+    }
+    return value;
+  }
+
+  [[nodiscard]] std::string read_device_name() const {
+    if (device_ == nullptr) {
+      return "unknown";
+    }
+    std::size_t size = 0;
+    if (clGetDeviceInfo(device_, CL_DEVICE_NAME, 0, nullptr, &size) !=
+            CL_SUCCESS ||
+        size == 0U) {
+      return "unknown";
+    }
+    std::string value(size, '\0');
+    if (clGetDeviceInfo(device_, CL_DEVICE_NAME, value.size(), value.data(),
+                        nullptr) != CL_SUCCESS) {
+      return "unknown";
+    }
+    if (!value.empty() && value.back() == '\0') {
+      value.pop_back();
+    }
+    return value;
+  }
+
   void reset() noexcept {
     if (kernel_ != nullptr) {
       clReleaseKernel(kernel_);
@@ -257,10 +308,13 @@ private:
   }
 
   cl_device_id device_ = nullptr;
+  cl_platform_id platform_ = nullptr;
   cl_context context_ = nullptr;
   cl_command_queue queue_ = nullptr;
   cl_program program_ = nullptr;
   cl_kernel kernel_ = nullptr;
+  std::string platform_name_ = "unknown";
+  std::string device_name_ = "unknown";
   bool ready_ = false;
 };
 
@@ -441,11 +495,11 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                                            std::string backend,
                                            double brightness, double contrast,
                                            double saturation)
-    : BackgroundBlurFilter(radius, foreground_threshold, std::move(backend),
-                           brightness, contrast, saturation, false, 1.0, 1.0,
-                           "luminance", 0.28, 0.42,
-                           "assets/models/person-segmentation.onnx", 3U, 0.70,
-                           "tracked_center", "", "", "auto", true, 1U, 3U) {}
+    : BackgroundBlurFilter(
+          radius, foreground_threshold, std::move(backend), brightness,
+          contrast, saturation, false, 1.0, 1.0, "luminance", 0.28, 0.42,
+          "assets/models/person-segmentation.onnx", 3U, 0.70, "tracked_center",
+          "", "", "auto", true, "CPU", 1U, 3U) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -455,8 +509,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t inference_interval, double mask_smoothing,
     std::string fallback_mask_mode, std::string input_shape,
     std::string output_shape, std::string requested_provider,
-    bool allow_provider_fallback, std::uint32_t mask_expand,
-    std::uint32_t mask_feather)
+    bool allow_provider_fallback, std::string openvino_device,
+    std::uint32_t mask_expand, std::uint32_t mask_feather)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -469,8 +523,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       output_shape_(std::move(output_shape)),
       requested_provider_(std::move(requested_provider)),
       allow_provider_fallback_(allow_provider_fallback),
-      mask_expand_(mask_expand), mask_feather_(mask_feather),
-      onnx_error_reported_(false) {
+      openvino_device_(std::move(openvino_device)), mask_expand_(mask_expand),
+      mask_feather_(mask_feather), onnx_error_reported_(false) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -503,9 +557,14 @@ BackgroundBlurFilter::BackgroundBlurFilter(
         "tracked_center");
   }
   if (requested_provider_ != "auto" && requested_provider_ != "cpu" &&
-      requested_provider_ != "openvino") {
+      requested_provider_ != "migraphx" && requested_provider_ != "openvino") {
     throw std::invalid_argument(
-        "background_blur provider must be auto, cpu, or openvino");
+        "background_blur provider must be auto, cpu, migraphx, or openvino");
+  }
+  if (openvino_device_ != "CPU") {
+    throw std::invalid_argument(
+        "background_blur openvino_device must be CPU unless an "
+        "OpenVINO-compatible Intel GPU is enumerated");
   }
   if (mask_width_ <= 0.0 || mask_height_ <= 0.0) {
     throw std::invalid_argument(
@@ -530,7 +589,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     try {
       onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
           model_path_, inference_interval_, mask_smoothing_, input_shape_,
-          output_shape_, requested_provider_, allow_provider_fallback_);
+          output_shape_, requested_provider_, allow_provider_fallback_,
+          openvino_device_);
     } catch (const std::exception &error) {
       frame.metadata()["background_blur_mask"] =
           "onnx_init_error_" + fallback_mask_mode_;
@@ -554,6 +614,16 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
       std::string{onnx_engine_->provider_fallback_reason()};
   frame.metadata()["onnx_runtime_model"] =
       std::string{onnx_engine_->model_summary()};
+  frame.metadata()["openvino_available_devices"] =
+      std::string{onnx_engine_->openvino_available_devices()};
+  frame.metadata()["openvino_device_requested"] =
+      std::string{onnx_engine_->openvino_device_requested()};
+  frame.metadata()["openvino_device_active"] =
+      std::string{onnx_engine_->openvino_device_active()};
+  frame.metadata()["segmentation_inference_backend"] =
+      std::string{onnx_engine_->active_provider()};
+  frame.metadata()["segmentation_inference_device"] =
+      std::string{onnx_engine_->openvino_device_active()};
   if (!onnx_engine_->available()) {
     frame.metadata()["background_blur_mask"] =
         "onnx_unavailable_" + fallback_mask_mode_;
@@ -588,10 +658,13 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
 void BackgroundBlurFilter::process(frame::Frame &frame) const {
   if (backend_ == "opencl" && process_opencl(frame)) {
     frame.metadata()["background_blur_backend"] = "opencl";
+    frame.metadata()["background_processing_backend"] = "opencl";
     return;
   }
   process_cpu(frame);
   frame.metadata()["background_blur_backend"] = "cpu";
+  frame.metadata()["background_processing_backend"] = "cpu";
+  frame.metadata()["background_processing_device"] = "CPU";
 }
 
 void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
@@ -670,6 +743,12 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   if (!resources.ready()) {
     return false;
   }
+  frame.metadata()["opencl_platform_active"] =
+      std::string{resources.platform_name()};
+  frame.metadata()["opencl_device_active"] =
+      std::string{resources.device_name()};
+  frame.metadata()["background_processing_device"] =
+      std::string{resources.device_name()};
 
   auto mask = person_mask(frame);
   std::vector<std::uint8_t> fallback_mask{0U};

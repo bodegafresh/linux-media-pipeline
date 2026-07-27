@@ -183,6 +183,10 @@ onnx_runtime_available_providers=[CPUExecutionProvider]
 onnx_runtime_provider_requested=auto
 onnx_runtime_provider_active=CPUExecutionProvider
 onnx_runtime_provider_fallback=false
+openvino_available_devices=[CPU]
+openvino_device_requested=CPU
+openvino_device_active=CPU
+background_processing_backend=opencl
 ```
 
 If it prints `background_blur_mask_active=onnx_unavailable_center`,
@@ -197,15 +201,32 @@ check that the model file exists, that Fedora installed `onnxruntime` and
 `./scripts/stream.sh install-model` installs the preferred ONNX Runtime model
 and its external `.data` weights file when required.
 
-The `provider` value in the preset can be `auto`, `cpu`, or `openvino`. `auto`
-uses `OpenVINOExecutionProvider` only when ONNX Runtime reports it as available;
-otherwise it keeps ONNX Runtime on the stable CPU provider while OpenCL handles
-the GPU blur.
-Do not install `onnxruntime-rocm` for this project on a workstation that also
-depends on a stable graphics stack for Unreal Engine, DaVinci Resolve, Blender,
-or similar apps. The project reports what ONNX Runtime providers are available
-and which one is active. If `onnx_runtime_provider_fallback=true`, inference is
-not running on the requested provider.
+The `provider` value in the preset can be `auto`, `cpu`, `migraphx`, or
+`openvino`. `auto` requests `MIGraphXExecutionProvider` only when the active
+ONNX Runtime build enumerates it; otherwise it keeps inference on
+`CPUExecutionProvider` while OpenCL handles the GPU blur. `openvino` is supported
+as an explicit CPU inference path on this AMD workstation and must not be treated
+as AMD GPU inference.
+
+Inspect providers with:
+
+```bash
+./build/dev/lmp --list-onnx-providers
+```
+
+Before installing MIGraphX/ONNX Runtime ROCm packages, capture a workstation
+snapshot and run the dry-run report:
+
+```bash
+./scripts/snapshot-workstation.sh
+./scripts/dnf-migraphx-dry-run.sh
+```
+
+Do not continue if DNF proposes replacing Mesa, Vulkan, OpenCL ICD Loader,
+FFmpeg, OBS, GCC, Clang, or kernel packages. The project reports what ONNX
+Runtime providers are available and which one is active. If
+`onnx_runtime_provider_fallback=true`, inference is not running on the requested
+provider.
 
 FFmpeg recoverable startup logs are hidden by default so the runtime status lines
 stay readable.
@@ -229,4 +250,6 @@ If ONNX is unavailable, `fallback_mask_mode: tracked_center` keeps a broader
 center mask while still using lightweight tracking for the crop.
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
-[docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).
+[docs/filters.md](docs/filters.md), [docs/obs.md](docs/obs.md),
+[docs/amd-migraphx.md](docs/amd-migraphx.md), and
+[docs/workstation-protection.md](docs/workstation-protection.md).

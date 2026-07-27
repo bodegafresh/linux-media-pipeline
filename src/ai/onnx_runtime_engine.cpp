@@ -10,7 +10,9 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #if LMP_HAS_ONNXRUNTIME
 #if __has_include(<onnxruntime_cxx_api.h>)
@@ -64,7 +66,7 @@ float probability_from_model_value(float value) noexcept {
 }
 
 struct TensorShape {
-  std::array<std::int64_t, 4> dimensions{};
+  std::array<std::int64_t, 8> dimensions{};
   std::size_t rank = 0;
 };
 
@@ -76,10 +78,10 @@ std::optional<TensorShape> read_shape(const TensorInfo &info) {
     Ort::GetApi().ReleaseStatus(rank_status);
     return std::nullopt;
   }
-  if (rank == 0U || rank > 4U) {
+  if (rank == 0U || rank > shape.dimensions.size()) {
+    shape.rank = rank;
     return std::nullopt;
   }
-  auto shape = TensorShape{};
   shape.rank = rank;
   const auto dimensions_status =
       Ort::GetApi().GetDimensions(info, shape.dimensions.data(), rank);
@@ -91,6 +93,47 @@ std::optional<TensorShape> read_shape(const TensorInfo &info) {
     dimension = dimension_or(dimension, 0);
   }
   return shape;
+}
+
+std::string describe_shape(std::string_view label,
+                           const std::optional<TensorShape> &shape) {
+  if (!shape.has_value()) {
+    return std::string{label} + "=unreadable";
+  }
+  auto result = std::string{label} + "_rank=" + std::to_string(shape->rank) +
+                " " + std::string{label} + "_dims=[";
+  for (std::size_t index = 0; index < shape->rank; ++index) {
+    if (index > 0U) {
+      result += "x";
+    }
+    result += std::to_string(shape->dimensions[index]);
+  }
+  result += "]";
+  return result;
+}
+
+std::optional<std::size_t> channel_axis(const TensorShape &shape) {
+  for (std::size_t index = 0; index < shape.rank; ++index) {
+    if (dimension_or(shape.dimensions[index], 0) == 3) {
+      return index;
+    }
+  }
+  return std::nullopt;
+}
+
+std::vector<std::size_t> spatial_axes(const TensorShape &shape,
+                                      std::size_t channel_index) {
+  std::vector<std::size_t> axes;
+  for (std::size_t index = 0; index < shape.rank; ++index) {
+    if (index == channel_index) {
+      continue;
+    }
+    const auto dimension = dimension_or(shape.dimensions[index], 1);
+    if (dimension > 1) {
+      axes.push_back(index);
+    }
+  }
+  return axes;
 }
 #endif
 
@@ -125,53 +168,40 @@ public:
           session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
       const auto maybe_shape = read_shape(input_info);
       if (!maybe_shape.has_value()) {
-        last_error_ = "model input rank must be 3 or 4";
+        last_error_ = "model input shape is unreadable";
         return;
       }
       const auto shape = *maybe_shape;
-      if (shape.rank == 3U) {
-        const auto looks_channels_last =
-            dimension_or(shape.dimensions[2], 3) == 3;
-        input_shape_[0] = 1;
-        input_shape_[1] = std::min(
-            dimension_or(shape.dimensions[0], looks_channels_last ? 256 : 3),
-            kMaxModelDimension);
-        input_shape_[2] = std::min(dimension_or(shape.dimensions[1], 256),
-                                   kMaxModelDimension);
-        input_shape_[3] = std::min(
-            dimension_or(shape.dimensions[2], looks_channels_last ? 3 : 256),
-            kMaxModelDimension);
-        input_shape_rank_ = 3U;
-      } else if (shape.rank == 4U) {
-        const auto looks_channels_last =
-            dimension_or(shape.dimensions[3], 3) == 3 &&
-            dimension_or(shape.dimensions[1], 256) != 3;
-        input_shape_[0] = dimension_or(shape.dimensions[0], 1);
-        input_shape_[1] = std::min(
-            dimension_or(shape.dimensions[1], looks_channels_last ? 256 : 3),
-            kMaxModelDimension);
-        input_shape_[2] = std::min(dimension_or(shape.dimensions[2], 256),
-                                   kMaxModelDimension);
-        input_shape_[3] = std::min(
-            dimension_or(shape.dimensions[3], looks_channels_last ? 3 : 256),
-            kMaxModelDimension);
-        input_shape_rank_ = 4U;
-      } else {
-        last_error_ = "model input rank must be 3 or 4";
+      const auto channel = channel_axis(shape);
+      if (!channel.has_value()) {
+        last_error_ = describe_shape("input", maybe_shape) +
+                      " unsupported: cannot find RGB channel dimension";
+        return;
+      }
+      const auto spatial = spatial_axes(shape, *channel);
+      if (spatial.size() < 2U) {
+        last_error_ = describe_shape("input", maybe_shape) +
+                      " unsupported: cannot find spatial dimensions";
         return;
       }
 
-      input_channels_last_ = input_shape_[3] == 3 && input_shape_[1] != 3;
-      const auto input_height = static_cast<std::uint32_t>(
-          input_channels_last_ ? input_shape_[1] : input_shape_[2]);
-      const auto input_width = static_cast<std::uint32_t>(
-          input_channels_last_ ? input_shape_[2] : input_shape_[3]);
-      ready_ = input_shape_[0] == 1 &&
-               ((input_channels_last_ && input_shape_[3] == 3) ||
-                (!input_channels_last_ && input_shape_[1] == 3)) &&
+      input_shape_rank_ = shape.rank;
+      for (std::size_t index = 0; index < shape.rank; ++index) {
+        input_shape_[index] = dimension_or(shape.dimensions[index], 1);
+      }
+      input_height_axis_ = spatial[spatial.size() - 2U];
+      input_width_axis_ = spatial[spatial.size() - 1U];
+      input_channel_axis_ = *channel;
+
+      const auto input_height =
+          static_cast<std::uint32_t>(input_shape_[input_height_axis_]);
+      const auto input_width =
+          static_cast<std::uint32_t>(input_shape_[input_width_axis_]);
+      ready_ = dimension_or(input_shape_[input_channel_axis_], 0) == 3 &&
                dimensions_are_sane(input_width, input_height);
       if (!ready_) {
-        last_error_ = "unsupported model input shape";
+        last_error_ = describe_shape("input", maybe_shape) +
+                      " unsupported: invalid image dimensions";
       }
     } catch (const std::exception &error) {
       ready_ = false;
@@ -197,19 +227,27 @@ public:
       return *cached_mask_;
     }
 
-    const auto input_height = static_cast<std::uint32_t>(
-        input_channels_last_ ? input_shape_[1] : input_shape_[2]);
-    const auto input_width = static_cast<std::uint32_t>(
-        input_channels_last_ ? input_shape_[2] : input_shape_[3]);
+    const auto input_height =
+        static_cast<std::uint32_t>(input_shape_[input_height_axis_]);
+    const auto input_width =
+        static_cast<std::uint32_t>(input_shape_[input_width_axis_]);
     if (!dimensions_are_sane(input_width, input_height)) {
       return fallback_segment_person(frame);
     }
     const auto source = filters::detail::read_packed_rgb(frame);
-    std::vector<float> input(static_cast<std::size_t>(3U) * input_width *
-                             input_height);
+    auto input_count = std::size_t{1U};
+    for (std::size_t index = 0; index < input_shape_rank_; ++index) {
+      input_count *= static_cast<std::size_t>(input_shape_[index]);
+    }
+    std::vector<float> input(input_count);
 
-    const auto plane_size = static_cast<std::size_t>(input_width) *
-                            static_cast<std::size_t>(input_height);
+    std::array<std::size_t, 8> strides{};
+    auto stride = std::size_t{1U};
+    for (std::size_t index = input_shape_rank_; index > 0U; --index) {
+      strides[index - 1U] = stride;
+      stride *= static_cast<std::size_t>(input_shape_[index - 1U]);
+    }
+
     for (std::uint32_t y = 0; y < input_height; ++y) {
       const auto source_y = static_cast<std::uint32_t>(
           (static_cast<std::uint64_t>(y) * frame.height()) / input_height);
@@ -218,18 +256,14 @@ public:
             (static_cast<std::uint64_t>(x) * frame.width()) / input_width);
         const auto pixel = source[filters::detail::pixel_index(
             source_x, source_y, frame.width())];
-        const auto index = filters::detail::pixel_index(x, y, input_width);
-        if (input_channels_last_) {
-          const auto base = index * 3U;
-          input[base] = static_cast<float>(pixel.red) / 255.0F;
-          input[base + 1U] = static_cast<float>(pixel.green) / 255.0F;
-          input[base + 2U] = static_cast<float>(pixel.blue) / 255.0F;
-        } else {
-          input[index] = static_cast<float>(pixel.red) / 255.0F;
-          input[plane_size + index] = static_cast<float>(pixel.green) / 255.0F;
-          input[(2U * plane_size) + index] =
-              static_cast<float>(pixel.blue) / 255.0F;
-        }
+        auto base = std::size_t{0U};
+        base += static_cast<std::size_t>(y) * strides[input_height_axis_];
+        base += static_cast<std::size_t>(x) * strides[input_width_axis_];
+        input[base] = static_cast<float>(pixel.red) / 255.0F;
+        input[base + strides[input_channel_axis_]] =
+            static_cast<float>(pixel.green) / 255.0F;
+        input[base + (2U * strides[input_channel_axis_])] =
+            static_cast<float>(pixel.blue) / 255.0F;
       }
     }
 
@@ -360,13 +394,15 @@ private:
   std::optional<Ort::Session> session_;
   std::string input_name_;
   std::string output_name_;
-  std::array<std::int64_t, 4> input_shape_;
+  std::array<std::int64_t, 8> input_shape_;
   std::size_t input_shape_rank_ = 4U;
+  std::size_t input_height_axis_ = 2U;
+  std::size_t input_width_axis_ = 3U;
+  std::size_t input_channel_axis_ = 1U;
   std::optional<SegmentationMask> cached_mask_;
   std::uint64_t frame_index_ = 0;
   std::uint32_t inference_interval_ = 3;
   double mask_smoothing_ = 0.70;
-  bool input_channels_last_ = false;
   bool ready_ = false;
   std::string last_error_;
 #else

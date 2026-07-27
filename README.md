@@ -151,11 +151,12 @@ actual AI model is the `.onnx` file. Put a person-segmentation model at:
 assets/models/person-segmentation.onnx
 ```
 
-The expected input is RGB float in `HxWx3`, `3xHxW`, `1x3xHxW`, or `1xHxWx3`
-format. The output can be a single mask or a common two-channel segmentation
-tensor such as `HxWx1`, `1x2xHxW`, or `1xHxWx2`; when two channels exist, the
-person channel is used. If ONNX Runtime or the model is missing, the pipeline
-keeps running with the deterministic fallback.
+The expected input is RGB float with one `3` channel axis and two spatial axes,
+for example `HxWx3`, `3xHxW`, `1x3xHxW`, `1xHxWx3`, or the same layout with
+leading singleton dimensions. The output can be a single mask or a common
+two-channel segmentation tensor such as `HxWx1`, `1x2xHxW`, or `1xHxWx2`; when
+two channels exist, the person channel is used. If ONNX Runtime or the model is
+missing, the pipeline keeps running with the deterministic fallback.
 
 Run the real AI background blur preset with:
 

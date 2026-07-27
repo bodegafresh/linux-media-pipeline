@@ -49,7 +49,9 @@ __kernel void background_blur(__global const uchar *input,
                               const uint crop_y,
                               const uint crop_width,
                               const uint crop_height,
-                              const uint mask_mode) {
+                              const uint mask_mode,
+                              const float mask_width,
+                              const float mask_height) {
   const uint x = get_global_id(0);
   const uint y = get_global_id(1);
   if (x >= width || y >= height) {
@@ -64,8 +66,8 @@ __kernel void background_blur(__global const uchar *input,
   const float green = (float)input[source_base + green_offset];
   const float blue = (float)input[source_base + blue_offset];
   const uchar luma = convert_uchar_sat_rte((0.299f * red) + (0.587f * green) + (0.114f * blue));
-  const float nx = (((float)x + 0.5f) / (float)width - 0.5f) / 0.28f;
-  const float ny = (((float)y + 0.5f) / (float)height - 0.48f) / 0.42f;
+  const float nx = (((float)x + 0.5f) / (float)width - 0.5f) / mask_width;
+  const float ny = (((float)y + 0.5f) / (float)height - 0.48f) / mask_height;
   const bool center_foreground = ((nx * nx) + (ny * ny)) <= 1.0f;
   const bool foreground = mask_mode == 1U ? center_foreground : luma >= foreground_threshold;
 
@@ -379,17 +381,19 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                                            double saturation)
     : BackgroundBlurFilter(radius, foreground_threshold, std::move(backend),
                            brightness, contrast, saturation, false, 1.0, 1.0,
-                           "luminance") {}
+                           "luminance", 0.28, 0.42) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
     std::string backend, double brightness, double contrast, double saturation,
-    bool auto_frame, double target_fill, double max_zoom, std::string mask_mode)
+    bool auto_frame, double target_fill, double max_zoom, std::string mask_mode,
+    double mask_width, double mask_height)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
       target_fill_(target_fill), max_zoom_(max_zoom),
-      mask_mode_(std::move(mask_mode)) {
+      mask_mode_(std::move(mask_mode)), mask_width_(mask_width),
+      mask_height_(mask_height) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -409,6 +413,10 @@ BackgroundBlurFilter::BackgroundBlurFilter(
   if (mask_mode_ != "luminance" && mask_mode_ != "center") {
     throw std::invalid_argument(
         "background_blur mask_mode must be luminance or center");
+  }
+  if (mask_width_ <= 0.0 || mask_height_ <= 0.0) {
+    throw std::invalid_argument(
+        "background_blur mask dimensions must be positive");
   }
 }
 
@@ -512,6 +520,8 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto crop_width = static_cast<cl_uint>(crop.width);
   const auto crop_height = static_cast<cl_uint>(crop.height);
   const auto mask_mode = opencl_mask_mode(mask_mode_);
+  const auto mask_width = static_cast<float>(mask_width_);
+  const auto mask_height = static_cast<float>(mask_height_);
   auto *kernel = resources.kernel();
 
   error = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
@@ -533,6 +543,8 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &crop_width);
   error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &crop_height);
   error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &mask_mode);
+  error |= clSetKernelArg(kernel, 19, sizeof(float), &mask_width);
+  error |= clSetKernelArg(kernel, 20, sizeof(float), &mask_height);
 
   const std::size_t global_work_size[] = {frame.width(), frame.height()};
   if (error == CL_SUCCESS) {

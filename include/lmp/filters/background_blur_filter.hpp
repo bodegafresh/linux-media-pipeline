@@ -18,7 +18,8 @@ public:
   BackgroundBlurFilter(std::uint32_t radius, std::uint8_t foreground_threshold,
                        std::string backend, double brightness, double contrast,
                        double saturation, bool auto_frame, double target_fill,
-                       double max_zoom, std::string mask_mode);
+                       double max_zoom, std::string mask_mode,
+                       double mask_width, double mask_height);
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -37,6 +38,8 @@ private:
   double target_fill_;
   double max_zoom_;
   std::string mask_mode_;
+  double mask_width_;
+  double mask_height_;
 };
 
 } // namespace lmp::filters

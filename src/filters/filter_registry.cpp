@@ -201,7 +201,8 @@ FilterRegistry create_default_registry() {
             detail::double_parameter(config, "saturation", 1.0),
             detail::bool_parameter(config, "auto_frame", false),
             detail::double_parameter(config, "target_fill", 0.62),
-            detail::double_parameter(config, "max_zoom", 1.8));
+            detail::double_parameter(config, "max_zoom", 1.8),
+            detail::string_parameter(config, "mask_mode", "luminance"));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

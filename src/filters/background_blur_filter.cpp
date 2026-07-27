@@ -48,7 +48,8 @@ __kernel void background_blur(__global const uchar *input,
                               const uint crop_x,
                               const uint crop_y,
                               const uint crop_width,
-                              const uint crop_height) {
+                              const uint crop_height,
+                              const uint mask_mode) {
   const uint x = get_global_id(0);
   const uint y = get_global_id(1);
   if (x >= width || y >= height) {
@@ -63,12 +64,16 @@ __kernel void background_blur(__global const uchar *input,
   const float green = (float)input[source_base + green_offset];
   const float blue = (float)input[source_base + blue_offset];
   const uchar luma = convert_uchar_sat_rte((0.299f * red) + (0.587f * green) + (0.114f * blue));
+  const float nx = (((float)x + 0.5f) / (float)width - 0.5f) / 0.28f;
+  const float ny = (((float)y + 0.5f) / (float)height - 0.48f) / 0.42f;
+  const bool center_foreground = ((nx * nx) + (ny * ny)) <= 1.0f;
+  const bool foreground = mask_mode == 1U ? center_foreground : luma >= foreground_threshold;
 
   float out_red = red;
   float out_green = green;
   float out_blue = blue;
 
-  if (luma < foreground_threshold) {
+  if (!foreground) {
     uint count = 0;
     uint red_sum = 0;
     uint green_sum = 0;
@@ -349,6 +354,10 @@ Crop crop_from_bounds(Bounds bounds, std::uint32_t frame_width,
                  static_cast<int>(frame_height - crop_h)));
   return Crop{crop_x, crop_y, crop_w, crop_h};
 }
+
+cl_uint opencl_mask_mode(std::string_view mode) {
+  return mode == "center" ? 1U : 0U;
+}
 #endif
 
 } // namespace
@@ -369,18 +378,18 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
                                            double brightness, double contrast,
                                            double saturation)
     : BackgroundBlurFilter(radius, foreground_threshold, std::move(backend),
-                           brightness, contrast, saturation, false, 1.0, 1.0) {}
+                           brightness, contrast, saturation, false, 1.0, 1.0,
+                           "luminance") {}
 
-BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
-                                           std::uint8_t foreground_threshold,
-                                           std::string backend,
-                                           double brightness, double contrast,
-                                           double saturation, bool auto_frame,
-                                           double target_fill, double max_zoom)
+BackgroundBlurFilter::BackgroundBlurFilter(
+    std::uint32_t radius, std::uint8_t foreground_threshold,
+    std::string backend, double brightness, double contrast, double saturation,
+    bool auto_frame, double target_fill, double max_zoom, std::string mask_mode)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
-      target_fill_(target_fill), max_zoom_(max_zoom) {
+      target_fill_(target_fill), max_zoom_(max_zoom),
+      mask_mode_(std::move(mask_mode)) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -396,6 +405,10 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
   }
   if (max_zoom_ < 1.0) {
     throw std::invalid_argument("background_blur max_zoom must be >= 1");
+  }
+  if (mask_mode_ != "luminance" && mask_mode_ != "center") {
+    throw std::invalid_argument(
+        "background_blur mask_mode must be luminance or center");
   }
 }
 
@@ -498,6 +511,7 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto crop_y = static_cast<cl_uint>(crop.y);
   const auto crop_width = static_cast<cl_uint>(crop.width);
   const auto crop_height = static_cast<cl_uint>(crop.height);
+  const auto mask_mode = opencl_mask_mode(mask_mode_);
   auto *kernel = resources.kernel();
 
   error = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
@@ -518,6 +532,7 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   error |= clSetKernelArg(kernel, 15, sizeof(cl_uint), &crop_y);
   error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &crop_width);
   error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &crop_height);
+  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &mask_mode);
 
   const std::size_t global_work_size[] = {frame.width(), frame.height()};
   if (error == CL_SUCCESS) {

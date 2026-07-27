@@ -20,6 +20,7 @@ filters:
     auto_frame: true
     target_fill: 0.62
     max_zoom: 1.7
+    mask_mode: center
     radius: 1
     foreground_threshold: 128
     brightness: 2

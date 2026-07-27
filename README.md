@@ -59,6 +59,7 @@ Run with a filter preset:
 
 ```bash
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/recording-background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-presenter.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/background-blur.yaml

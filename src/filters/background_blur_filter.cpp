@@ -324,6 +324,48 @@ OpenClBackgroundBlurResources &opencl_background_resources() {
 }
 #endif
 
+std::optional<ai::SegmentationMask>
+ellipse_mask_from_centroid(const ai::SegmentationMask &mask,
+                           std::uint8_t threshold, double width_fraction,
+                           double height_fraction) {
+  auto weight_sum = double{0.0};
+  auto weighted_x = double{0.0};
+  auto weighted_y = double{0.0};
+  for (std::uint32_t y = 0; y < mask.height(); ++y) {
+    for (std::uint32_t x = 0; x < mask.width(); ++x) {
+      const auto value = mask.at(x, y);
+      if (value < threshold) {
+        continue;
+      }
+      const auto weight = static_cast<double>(value);
+      weight_sum += weight;
+      weighted_x += static_cast<double>(x) * weight;
+      weighted_y += static_cast<double>(y) * weight;
+    }
+  }
+  if (weight_sum <= 0.0) {
+    return std::nullopt;
+  }
+
+  const auto center_x = weighted_x / weight_sum;
+  const auto center_y = weighted_y / weight_sum;
+  const auto radius_x =
+      std::max(1.0, width_fraction * static_cast<double>(mask.width()) * 0.5);
+  const auto radius_y =
+      std::max(1.0, height_fraction * static_cast<double>(mask.height()) * 0.5);
+
+  auto values = std::vector<std::uint8_t>{};
+  values.reserve(mask.values().size());
+  for (std::uint32_t y = 0; y < mask.height(); ++y) {
+    for (std::uint32_t x = 0; x < mask.width(); ++x) {
+      const auto nx = (static_cast<double>(x) - center_x) / radius_x;
+      const auto ny = (static_cast<double>(y) - center_y) / radius_y;
+      values.push_back(((nx * nx) + (ny * ny)) <= 1.0 ? 255U : 0U);
+    }
+  }
+  return ai::SegmentationMask{mask.width(), mask.height(), std::move(values)};
+}
+
 #if LMP_HAS_OPENCL
 struct Bounds {
   std::uint32_t min_x;
@@ -664,6 +706,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     }
     frame.metadata()["segmentation_mask_coverage_raw"] =
         std::to_string(ai::mask_coverage(mask, foreground_threshold_));
+    auto hint_mask = ellipse_mask_from_centroid(mask, foreground_threshold_,
+                                                mask_width_, mask_height_);
     if (keep_largest_component_) {
       mask = ai::largest_component_mask(mask, foreground_threshold_);
       frame.metadata()["segmentation_mask_largest_component"] = "true";
@@ -679,6 +723,12 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
           "onnx_rejected_" + fallback_mask_mode_;
       frame.metadata()["segmentation_mask_rejected"] =
           "coverage:" + std::to_string(usable_coverage);
+      if (hint_mask.has_value()) {
+        frame.metadata()["background_blur_mask"] = "onnx_hint_ellipse";
+        frame.metadata()["segmentation_mask_hint_coverage"] = std::to_string(
+            ai::mask_coverage(*hint_mask, foreground_threshold_));
+        return hint_mask;
+      }
       return std::nullopt;
     }
     const auto timing = onnx_engine_->last_timing();

@@ -139,6 +139,23 @@ When rejected, the stream prints `segmentation_mask_rejected=...` and falls back
 to the configured stable mask mode instead of using a noisy mask for blur or
 auto-framing.
 
+When a noisy ONNX mask still has a useful center of mass, the filter can use an
+AI-guided ellipse instead. The stream then prints:
+
+```text
+background_blur_mask_active=onnx_hint_ellipse
+segmentation_mask_hint_coverage=...
+```
+
+For recording or streaming today, prefer the stable preset:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/recording-background-blur.yaml
+```
+
+It uses OpenCL blur with a wide protected center region and does not rely on a
+noisy ONNX mask or automatic reframing.
+
 `inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
 pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
 lower values follow movement faster, higher values look steadier.

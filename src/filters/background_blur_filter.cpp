@@ -324,6 +324,10 @@ OpenClBackgroundBlurResources &opencl_background_resources() {
 }
 #endif
 
+constexpr auto kMaxPreviousMaskReuses = 4U;
+constexpr auto kBadMaskStreakBeforeCooldown = 3U;
+constexpr auto kBadMaskCooldownFrames = 150U;
+
 struct AdaptiveMask {
   ai::SegmentationMask mask;
   std::uint8_t threshold;
@@ -763,6 +767,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
   if (mask_mode_ != "onnx") {
     return std::nullopt;
   }
+  if (onnx_mask_cooldown_frames_ > 0U) {
+    --onnx_mask_cooldown_frames_;
+    frame.metadata()["background_blur_mask"] =
+        "onnx_cooldown_" + fallback_mask_mode_;
+    frame.metadata()["segmentation_mask_cooldown_frames"] =
+        std::to_string(onnx_mask_cooldown_frames_);
+    return std::nullopt;
+  }
   if (onnx_engine_ == nullptr) {
     try {
       onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
@@ -875,7 +887,9 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
           "onnx_rejected_" + fallback_mask_mode_;
       frame.metadata()["segmentation_mask_rejected"] =
           "coverage:" + std::to_string(usable_coverage);
-      constexpr auto kMaxPreviousMaskReuses = 6U;
+      ++bad_person_mask_streak_;
+      frame.metadata()["segmentation_mask_bad_streak"] =
+          std::to_string(bad_person_mask_streak_);
       if (last_good_person_mask_.has_value() &&
           last_good_person_mask_reuse_count_ < kMaxPreviousMaskReuses) {
         ++last_good_person_mask_reuse_count_;
@@ -884,6 +898,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
         frame.metadata()["segmentation_mask_previous_reuse_count"] =
             std::to_string(last_good_person_mask_reuse_count_);
         return last_good_person_mask_;
+      }
+      if (bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
+        onnx_mask_cooldown_frames_ = kBadMaskCooldownFrames;
+        bad_person_mask_streak_ = 0U;
+        frame.metadata()["background_blur_mask"] =
+            "onnx_cooldown_" + fallback_mask_mode_;
+        frame.metadata()["segmentation_mask_cooldown_frames"] =
+            std::to_string(onnx_mask_cooldown_frames_);
       }
       return std::nullopt;
     }
@@ -894,7 +916,9 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
         frame.metadata()["background_blur_mask"] =
             "onnx_rejected_" + fallback_mask_mode_;
         frame.metadata()["segmentation_mask_rejected"] = "shape";
-        constexpr auto kMaxPreviousMaskReuses = 6U;
+        ++bad_person_mask_streak_;
+        frame.metadata()["segmentation_mask_bad_streak"] =
+            std::to_string(bad_person_mask_streak_);
         if (last_good_person_mask_.has_value() &&
             last_good_person_mask_reuse_count_ < kMaxPreviousMaskReuses) {
           ++last_good_person_mask_reuse_count_;
@@ -904,12 +928,21 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
               std::to_string(last_good_person_mask_reuse_count_);
           return last_good_person_mask_;
         }
+        if (bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
+          onnx_mask_cooldown_frames_ = kBadMaskCooldownFrames;
+          bad_person_mask_streak_ = 0U;
+          frame.metadata()["background_blur_mask"] =
+              "onnx_cooldown_" + fallback_mask_mode_;
+          frame.metadata()["segmentation_mask_cooldown_frames"] =
+              std::to_string(onnx_mask_cooldown_frames_);
+        }
         return std::nullopt;
       }
     } else {
       frame.metadata()["background_blur_mask"] =
           "onnx_rejected_" + fallback_mask_mode_;
       frame.metadata()["segmentation_mask_rejected"] = "shape:none";
+      ++bad_person_mask_streak_;
       return std::nullopt;
     }
     const auto timing = onnx_engine_->last_timing();
@@ -928,6 +961,8 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
         ",feather:" + std::to_string(mask_feather_);
     last_good_person_mask_ = mask;
     last_good_person_mask_reuse_count_ = 0;
+    bad_person_mask_streak_ = 0U;
+    onnx_mask_cooldown_frames_ = 0U;
     return mask;
   } catch (const std::exception &error) {
     frame.metadata()["background_blur_mask"] =
@@ -937,7 +972,9 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
                 << error.what() << "\"\n";
       onnx_error_reported_ = true;
     }
-    constexpr auto kMaxPreviousMaskReuses = 6U;
+    ++bad_person_mask_streak_;
+    frame.metadata()["segmentation_mask_bad_streak"] =
+        std::to_string(bad_person_mask_streak_);
     if (last_good_person_mask_.has_value() &&
         last_good_person_mask_reuse_count_ < kMaxPreviousMaskReuses) {
       ++last_good_person_mask_reuse_count_;
@@ -946,6 +983,14 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
       frame.metadata()["segmentation_mask_previous_reuse_count"] =
           std::to_string(last_good_person_mask_reuse_count_);
       return last_good_person_mask_;
+    }
+    if (bad_person_mask_streak_ >= kBadMaskStreakBeforeCooldown) {
+      onnx_mask_cooldown_frames_ = kBadMaskCooldownFrames;
+      bad_person_mask_streak_ = 0U;
+      frame.metadata()["background_blur_mask"] =
+          "onnx_cooldown_" + fallback_mask_mode_;
+      frame.metadata()["segmentation_mask_cooldown_frames"] =
+          std::to_string(onnx_mask_cooldown_frames_);
     }
     return std::nullopt;
   }

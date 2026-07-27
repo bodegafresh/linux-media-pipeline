@@ -336,6 +336,10 @@ public:
                 "segmentation_mask_recovery_rejected");
     report_once(metadata, "segmentation_mask_rejected",
                 "segmentation_mask_rejected");
+    report_once(metadata, "segmentation_mask_bad_streak",
+                "segmentation_mask_bad_streak");
+    report_once(metadata, "segmentation_mask_cooldown_frames",
+                "segmentation_mask_cooldown_frames");
     report_once(metadata, "segmentation_mask_hint_coverage",
                 "segmentation_mask_hint_coverage");
     report_once(metadata, "segmentation_mask_coverage_refined",

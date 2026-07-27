@@ -67,3 +67,7 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Local diagnostics and external model weights
+artifacts/
+assets/models/*.data

@@ -13,6 +13,12 @@ if [[ -z "${ONNXRUNTIME_ROOT:-}" ]] && command -v rpm >/dev/null 2>&1; then
     cmake_args+=("-DONNXRUNTIME_ROOT=${onnxruntime_rocm_lib_dir}/..")
   fi
 fi
+if [[ -z "${ONNXRUNTIME_ROOT:-}" ]] &&
+  [[ "$(uname -s)" == "Darwin" ]] &&
+  command -v brew >/dev/null 2>&1 &&
+  brew --prefix onnxruntime >/dev/null 2>&1; then
+  cmake_args+=("-DONNXRUNTIME_ROOT=$(brew --prefix onnxruntime)")
+fi
 
 if [[ "${#cmake_args[@]}" -gt 0 ]]; then
   cmake --preset dev "${cmake_args[@]}"

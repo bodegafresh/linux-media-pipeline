@@ -10,11 +10,13 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -45,7 +47,13 @@ void print_help() {
          "and write artifacts/onnx-gpu-verification.json.\n"
       << "  --onnx-provider PROVIDER\n"
          "                   Provider for --verify-onnx-gpu: auto, cpu, "
-         "migraphx, rocm, or openvino.\n";
+         "migraphx, rocm, or openvino.\n"
+      << "  --diagnose-frame PATH\n"
+         "                   Process a binary PPM P6 frame and write local "
+         "diagnostic artifacts.\n"
+      << "  --diagnose-output DIR\n"
+         "                   Output directory for --diagnose-frame. Default: "
+         "artifacts/frame-diagnostics.\n";
 }
 
 void list_onnx_providers() {
@@ -451,6 +459,109 @@ lmp::frame::Frame make_test_pattern(std::uint32_t width, std::uint32_t height,
       lmp::frame::Frame::Clock::now()};
 }
 
+std::string read_ppm_token(std::istream &input) {
+  auto token = std::string{};
+  while (input.good()) {
+    const auto peeked = input.peek();
+    if (peeked == '#') {
+      input.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      continue;
+    }
+    if (std::isspace(peeked) != 0) {
+      static_cast<void>(input.get());
+      continue;
+    }
+    break;
+  }
+  while (input.good() && std::isspace(input.peek()) == 0) {
+    token.push_back(static_cast<char>(input.get()));
+  }
+  if (token.empty()) {
+    throw std::runtime_error("invalid PPM: missing token");
+  }
+  return token;
+}
+
+lmp::frame::Frame read_ppm_frame(const std::filesystem::path &path) {
+  std::ifstream input{path, std::ios::binary};
+  if (!input) {
+    throw std::runtime_error("cannot open diagnostic frame: " + path.string());
+  }
+  if (read_ppm_token(input) != "P6") {
+    throw std::runtime_error("diagnostic frame must be binary PPM P6");
+  }
+  const auto width = static_cast<std::uint32_t>(
+      std::stoul(read_ppm_token(input)));
+  const auto height = static_cast<std::uint32_t>(
+      std::stoul(read_ppm_token(input)));
+  const auto max_value = std::stoul(read_ppm_token(input));
+  if (max_value != 255U) {
+    throw std::runtime_error("diagnostic PPM must use max value 255");
+  }
+  if (std::isspace(input.peek()) != 0) {
+    static_cast<void>(input.get());
+  }
+  auto bytes = std::vector<std::uint8_t>(
+      static_cast<std::size_t>(width) * height * 3U);
+  input.read(reinterpret_cast<char *>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+  if (input.gcount() != static_cast<std::streamsize>(bytes.size())) {
+    throw std::runtime_error("diagnostic PPM data is incomplete");
+  }
+  return lmp::frame::Frame{
+      width,
+      height,
+      lmp::frame::PixelFormat::Rgb,
+      std::move(bytes),
+      std::vector<std::size_t>{static_cast<std::size_t>(width) * 3U},
+      lmp::frame::Frame::Clock::now()};
+}
+
+void write_ppm_frame(const std::filesystem::path &path,
+                     const lmp::frame::Frame &frame) {
+  if (frame.format() != lmp::frame::PixelFormat::Rgb) {
+    throw std::runtime_error("diagnostic PPM writer requires RGB frames");
+  }
+  std::ofstream output{path, std::ios::binary};
+  if (!output) {
+    throw std::runtime_error("cannot write diagnostic frame: " + path.string());
+  }
+  output << "P6\n" << frame.width() << ' ' << frame.height() << "\n255\n";
+  const auto bytes = frame.data();
+  output.write(reinterpret_cast<const char *>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+}
+
+void diagnose_frame(const lmp::config::AppConfig &config,
+                    const lmp::filters::FilterPipeline &pipeline,
+                    const std::filesystem::path &input_path,
+                    const std::filesystem::path &output_dir) {
+  std::filesystem::create_directories(output_dir);
+  auto input_frame = read_ppm_frame(input_path);
+  auto output_frame = input_frame;
+  const auto started = std::chrono::steady_clock::now();
+  pipeline.process(output_frame);
+  const auto elapsed = std::chrono::steady_clock::now() - started;
+
+  write_ppm_frame(output_dir / "input.ppm", input_frame);
+  write_ppm_frame(output_dir / "output.ppm", output_frame);
+
+  std::ofstream metadata{output_dir / "metadata.txt"};
+  metadata << "config=" << config.capture.type << '\n'
+           << "input=" << input_path.string() << '\n'
+           << "width=" << output_frame.width() << '\n'
+           << "height=" << output_frame.height() << '\n'
+           << "processing_ms="
+           << std::chrono::duration<double, std::milli>(elapsed).count()
+           << '\n';
+  for (const auto &[key, value] : output_frame.metadata()) {
+    metadata << key << '=' << value << '\n';
+  }
+  std::cout << "wrote " << (output_dir / "input.ppm").string() << '\n'
+            << "wrote " << (output_dir / "output.ppm").string() << '\n'
+            << "wrote " << (output_dir / "metadata.txt").string() << '\n';
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -463,6 +574,9 @@ int main(int argc, char **argv) {
     auto list_providers = false;
     auto verify_onnx_gpu = false;
     auto onnx_provider = std::string{"migraphx"};
+    auto diagnose_frame_path = std::optional<std::filesystem::path>{};
+    auto diagnose_output_dir =
+        std::filesystem::path{"artifacts/frame-diagnostics"};
     auto stats_every = stats_interval_from_env();
     for (int index = 1; index < argc; ++index) {
       const auto option = std::string_view{argv[index]};
@@ -500,6 +614,18 @@ int main(int argc, char **argv) {
           throw std::runtime_error("--onnx-provider requires a provider name");
         }
         onnx_provider = argv[index];
+      } else if (option == "--diagnose-frame") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--diagnose-frame requires a PPM path");
+        }
+        diagnose_frame_path = std::filesystem::path{argv[index]};
+      } else if (option == "--diagnose-output") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--diagnose-output requires a directory");
+        }
+        diagnose_output_dir = std::filesystem::path{argv[index]};
       } else {
         throw std::runtime_error("unknown option: " + std::string{option});
       }
@@ -520,6 +646,19 @@ int main(int argc, char **argv) {
         lmp::filters::FilterPipeline::from_config(config.filters, registry);
     const auto filters_active = active_filter_list(config.filters);
     const auto plan = pipeline_plan(config.filters);
+    if (diagnose_frame_path.has_value()) {
+      std::cout << "linux-media-pipeline " << lmp::version_string()
+                << " diagnose_frame=true config=" << config_path
+                << " input=" << diagnose_frame_path->string()
+                << " output_dir=" << diagnose_output_dir.string()
+                << " filter_backend=requested:" << config.gpu.backend
+                << " filters=" << pipeline.size()
+                << " filters_active=" << filters_active << " pipeline_plan=\""
+                << plan << "\"\n";
+      diagnose_frame(config, pipeline, *diagnose_frame_path,
+                     diagnose_output_dir);
+      return 0;
+    }
 
     lmp::capture::GoProUdpSource capture{config.capture.address};
     if (config.capture.type != capture.type()) {

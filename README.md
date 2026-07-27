@@ -24,7 +24,13 @@ Meet, Zoom, Chrome, or any other app that can read `/dev/video*`.
 - v4l2loopback
 - OBS 31+ or another V4L2 consumer
 
+macOS is supported as a development/validation environment for building, tests,
+FFmpeg, OpenCL, and ONNX Runtime provider checks. V4L2 virtual-camera output is
+Linux-only, so OBS/Meet end-to-end camera validation still runs on Fedora.
+
 ## Quick Start
+
+Fedora:
 
 ```bash
 ./scripts/install-fedora-deps.sh
@@ -33,6 +39,41 @@ Meet, Zoom, Chrome, or any other app that can read `/dev/video*`.
 ./scripts/test.sh
 ./scripts/setup-loopback.sh 20 linux-media-pipeline
 ./scripts/stream.sh doctor /dev/video20 config/presets/ai-background-blur.yaml
+```
+
+macOS local validation:
+
+```bash
+./scripts/install-macos-deps.sh
+./scripts/stream.sh install-model
+./scripts/build.sh
+./scripts/test.sh
+./build/dev/lmp --list-onnx-providers
+```
+
+To tune AI background blur locally on macOS, convert a captured frame to binary
+PPM and run the same preset through the diagnostic path:
+
+```bash
+ffmpeg -y -i frame.png -frames:v 1 -pix_fmt rgb24 artifacts/frame.ppm
+./build/dev/lmp --config config/presets/ai-background-blur-rocm.yaml \
+  --diagnose-frame artifacts/frame.ppm \
+  --diagnose-output artifacts/frame-diagnostics/rocm-preset
+```
+
+The diagnostic writes:
+
+```text
+artifacts/frame-diagnostics/rocm-preset/input.ppm
+artifacts/frame-diagnostics/rocm-preset/output.ppm
+artifacts/frame-diagnostics/rocm-preset/metadata.txt
+```
+
+Convert the output to PNG for quick inspection:
+
+```bash
+ffmpeg -y -i artifacts/frame-diagnostics/rocm-preset/output.ppm \
+  artifacts/frame-diagnostics/rocm-preset/output.png
 ```
 
 Validate the virtual camera with a generated pattern:

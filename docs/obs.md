@@ -72,6 +72,15 @@ background_blur_backend_active=opencl
 background_blur_mask_active=onnx
 ```
 
+For a tuning pass, add stats:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml --stats-every 5
+```
+
+Use the reported FPS and frame times to tune `inference_interval` and
+`mask_smoothing` in `config/presets/ai-background-blur.yaml`.
+
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because
 `assets/models/person-segmentation.onnx` is missing or incompatible.

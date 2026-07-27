@@ -415,19 +415,22 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
     : BackgroundBlurFilter(radius, foreground_threshold, std::move(backend),
                            brightness, contrast, saturation, false, 1.0, 1.0,
                            "luminance", 0.28, 0.42,
-                           "assets/models/person-segmentation.onnx") {}
+                           "assets/models/person-segmentation.onnx", 3U, 0.70) {
+}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
     std::string backend, double brightness, double contrast, double saturation,
     bool auto_frame, double target_fill, double max_zoom, std::string mask_mode,
-    double mask_width, double mask_height, std::string model_path)
+    double mask_width, double mask_height, std::string model_path,
+    std::uint32_t inference_interval, double mask_smoothing)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
       target_fill_(target_fill), max_zoom_(max_zoom),
       mask_mode_(std::move(mask_mode)), mask_width_(mask_width),
-      mask_height_(mask_height), model_path_(std::move(model_path)) {
+      mask_height_(mask_height), model_path_(std::move(model_path)),
+      inference_interval_(inference_interval), mask_smoothing_(mask_smoothing) {
   if (radius_ == 0U) {
     throw std::invalid_argument("background blur radius must be >= 1");
   }
@@ -453,6 +456,14 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     throw std::invalid_argument(
         "background_blur mask dimensions must be positive");
   }
+  if (inference_interval_ == 0U) {
+    throw std::invalid_argument(
+        "background_blur inference_interval must be >= 1");
+  }
+  if (mask_smoothing_ < 0.0 || mask_smoothing_ > 0.95) {
+    throw std::invalid_argument(
+        "background_blur mask_smoothing must be in [0, 0.95]");
+  }
 }
 
 std::optional<ai::SegmentationMask>
@@ -461,14 +472,21 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     return std::nullopt;
   }
   if (onnx_engine_ == nullptr) {
-    onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(model_path_);
+    onnx_engine_ = std::make_unique<ai::OnnxRuntimeEngine>(
+        model_path_, inference_interval_, mask_smoothing_);
   }
   if (!onnx_engine_->available()) {
     frame.metadata()["background_blur_mask"] = "onnx_unavailable_center";
     return std::nullopt;
   }
-  frame.metadata()["background_blur_mask"] = "onnx";
-  return onnx_engine_->segment_person(frame);
+  try {
+    auto mask = onnx_engine_->segment_person(frame);
+    frame.metadata()["background_blur_mask"] = "onnx";
+    return mask;
+  } catch (const std::exception &) {
+    frame.metadata()["background_blur_mask"] = "onnx_error_center";
+    return std::nullopt;
+  }
 }
 
 void BackgroundBlurFilter::process(frame::Frame &frame) const {

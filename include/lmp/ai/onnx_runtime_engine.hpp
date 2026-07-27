@@ -2,6 +2,7 @@
 
 #include "lmp/ai/inference_engine.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -10,6 +11,8 @@ namespace lmp::ai {
 class OnnxRuntimeEngine final : public IInferenceEngine {
 public:
   explicit OnnxRuntimeEngine(std::string model_path);
+  OnnxRuntimeEngine(std::string model_path, std::uint32_t inference_interval,
+                    double mask_smoothing);
   ~OnnxRuntimeEngine() override;
 
   OnnxRuntimeEngine(const OnnxRuntimeEngine &) = delete;

@@ -7,9 +7,12 @@
 #include "lmp/output/v4l2_output.hpp"
 #include "lmp/version.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -28,8 +31,80 @@ void print_help() {
       << "  --check-output   Open the configured V4L2 output device.\n"
       << "  --stream-live    Decode configured capture with FFmpeg and stream "
          "to V4L2.\n"
-      << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n";
+      << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n"
+      << "  --stats-every N  Print runtime FPS/latency stats every N "
+         "seconds.\n";
 }
+
+std::optional<double> parse_positive_double(std::string_view value,
+                                            std::string_view name) {
+  try {
+    const auto parsed = std::stod(std::string{value});
+    if (parsed <= 0.0) {
+      throw std::runtime_error(std::string{name} + " must be > 0");
+    }
+    return parsed;
+  } catch (const std::invalid_argument &) {
+    throw std::runtime_error(std::string{name} + " must be a number");
+  } catch (const std::out_of_range &) {
+    throw std::runtime_error(std::string{name} + " is out of range");
+  }
+}
+
+std::optional<double> stats_interval_from_env() {
+  const auto *configured = std::getenv("LMP_STATS_EVERY");
+  if (configured == nullptr || std::string_view{configured}.empty()) {
+    return std::nullopt;
+  }
+  return parse_positive_double(configured, "LMP_STATS_EVERY");
+}
+
+class StatsReporter {
+public:
+  explicit StatsReporter(std::optional<double> interval_seconds)
+      : interval_seconds_(interval_seconds),
+        window_started_(std::chrono::steady_clock::now()) {}
+
+  void observe(std::chrono::steady_clock::duration processing_time) {
+    if (!interval_seconds_.has_value()) {
+      return;
+    }
+    ++frames_;
+    total_processing_time_ += processing_time;
+    max_processing_time_ = std::max(max_processing_time_, processing_time);
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed = now - window_started_;
+    const auto elapsed_seconds = std::chrono::duration<double>(elapsed).count();
+    if (elapsed_seconds < *interval_seconds_) {
+      return;
+    }
+
+    const auto average_ms =
+        std::chrono::duration<double, std::milli>(total_processing_time_)
+            .count() /
+        static_cast<double>(frames_);
+    const auto max_ms =
+        std::chrono::duration<double, std::milli>(max_processing_time_).count();
+    const auto fps = static_cast<double>(frames_) / elapsed_seconds;
+    std::cout << "runtime_stats fps=" << fps << " avg_frame_ms=" << average_ms
+              << " max_frame_ms=" << max_ms << " frames=" << frames_ << '\n';
+
+    frames_ = 0U;
+    total_processing_time_ = std::chrono::steady_clock::duration::zero();
+    max_processing_time_ = std::chrono::steady_clock::duration::zero();
+    window_started_ = now;
+  }
+
+private:
+  std::optional<double> interval_seconds_;
+  std::chrono::steady_clock::time_point window_started_;
+  std::uint64_t frames_ = 0U;
+  std::chrono::steady_clock::duration total_processing_time_ =
+      std::chrono::steady_clock::duration::zero();
+  std::chrono::steady_clock::duration max_processing_time_ =
+      std::chrono::steady_clock::duration::zero();
+};
 
 std::string
 active_filter_list(const std::vector<lmp::config::FilterConfig> &filters) {
@@ -144,6 +219,7 @@ int main(int argc, char **argv) {
     auto check_output = false;
     auto stream_live = false;
     auto test_pattern = false;
+    auto stats_every = stats_interval_from_env();
     for (int index = 1; index < argc; ++index) {
       const auto option = std::string_view{argv[index]};
       if (option == "--help") {
@@ -156,6 +232,12 @@ int main(int argc, char **argv) {
           throw std::runtime_error("--config requires a path");
         }
         config_path = argv[index];
+      } else if (option == "--stats-every") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--stats-every requires seconds");
+        }
+        stats_every = parse_positive_double(argv[index], "--stats-every");
       } else if (option == "--open-capture") {
         open_capture = true;
       } else if (option == "--check-output") {
@@ -217,7 +299,9 @@ int main(int argc, char **argv) {
       bool reported_filter_backend = false;
       bool reported_background_blur_backend = false;
       bool reported_background_blur_mask = false;
+      StatsReporter stats{stats_every};
       while (true) {
+        const auto frame_started = std::chrono::steady_clock::now();
         auto frame = decoder.read_frame();
         pipeline.process(frame);
         if (!reported_filter_backend) {
@@ -245,6 +329,7 @@ int main(int argc, char **argv) {
           }
         }
         output.write(frame);
+        stats.observe(std::chrono::steady_clock::now() - frame_started);
       }
     }
     if (test_pattern) {
@@ -268,7 +353,9 @@ int main(int argc, char **argv) {
       bool reported_filter_backend = false;
       bool reported_background_blur_backend = false;
       bool reported_background_blur_mask = false;
+      StatsReporter stats{stats_every};
       for (std::uint32_t frame_index = 0;; ++frame_index) {
+        const auto frame_started = std::chrono::steady_clock::now();
         auto frame = make_test_pattern(width, height, frame_index);
         pipeline.process(frame);
         if (!reported_filter_backend) {
@@ -296,6 +383,7 @@ int main(int argc, char **argv) {
           }
         }
         output.write(frame);
+        stats.observe(std::chrono::steady_clock::now() - frame_started);
         std::this_thread::sleep_for(std::chrono::milliseconds{1000 / fps});
       }
     }

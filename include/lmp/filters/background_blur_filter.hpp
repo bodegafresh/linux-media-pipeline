@@ -24,7 +24,8 @@ public:
                        double saturation, bool auto_frame, double target_fill,
                        double max_zoom, std::string mask_mode,
                        double mask_width, double mask_height,
-                       std::string model_path);
+                       std::string model_path, std::uint32_t inference_interval,
+                       double mask_smoothing);
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -48,6 +49,8 @@ private:
   double mask_width_;
   double mask_height_;
   std::string model_path_;
+  std::uint32_t inference_interval_;
+  double mask_smoothing_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
 };
 

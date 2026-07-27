@@ -70,6 +70,23 @@ That line means `background_blur` is using the real
 `onnx_unavailable_center` or `center`, the stream is still usable, but it is
 using the fixed fallback mask instead of true person segmentation.
 
+The AI blur preset exposes the main performance knobs:
+
+```yaml
+inference_interval: 3
+mask_smoothing: 0.70
+```
+
+`inference_interval` controls how often ONNX runs. Higher values reduce CPU/GPU
+pressure but make tracking less reactive. `mask_smoothing` damps mask jitter;
+lower values follow movement faster, higher values look steadier.
+
+For calibration, print runtime stats every five seconds:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml --stats-every 5
+```
+
 `auto_frame`, `sharpen`, overlays, and histogram still run on CPU.
 
 `auto_frame` crops toward the detected foreground and scales back to the output

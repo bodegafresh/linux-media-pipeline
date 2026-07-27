@@ -171,10 +171,11 @@ background_blur_backend_active=opencl
 background_blur_mask_active=onnx
 ```
 
-If it prints `background_blur_mask_active=onnx_unavailable_center` or
+If it prints `background_blur_mask_active=onnx_unavailable_center`,
+`background_blur_mask_active=onnx_error_center`, or
 `background_blur_mask_active=center`, the runtime is not using a real model yet;
-check that the model file exists and that Fedora installed `onnxruntime` and
-`onnxruntime-devel`.
+check that the model file exists, that Fedora installed `onnxruntime` and
+`onnxruntime-devel`, and that the model input/output shape is compatible.
 
 FFmpeg warnings are hidden by default so the runtime status lines stay readable.
 To temporarily restore FFmpeg diagnostics:
@@ -182,6 +183,17 @@ To temporarily restore FFmpeg diagnostics:
 ```bash
 LMP_FFMPEG_LOG_LEVEL=warning ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml
 ```
+
+For live tuning, enable periodic runtime stats:
+
+```bash
+./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml --stats-every 5
+```
+
+The stats line reports real pipeline FPS plus average and worst frame time. If
+FPS drops, increase `inference_interval` in the preset so the ONNX model runs
+less often. If the crop follows too slowly, lower `mask_smoothing`; if it jitters,
+raise it slightly.
 
 See [docs/architecture.md](docs/architecture.md), [docs/live-video.md](docs/live-video.md),
 [docs/filters.md](docs/filters.md), and [docs/obs.md](docs/obs.md).

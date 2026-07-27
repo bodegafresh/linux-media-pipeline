@@ -72,7 +72,9 @@ __kernel void background_blur(__global const uchar *input,
   const uchar luma = convert_uchar_sat_rte((0.299f * red) + (0.587f * green) + (0.114f * blue));
   const float nx = (((float)x + 0.5f) / (float)width - 0.5f) / mask_width;
   const float ny = (((float)y + 0.5f) / (float)height - 0.48f) / mask_height;
-  const bool center_foreground = ((nx * nx) + (ny * ny)) <= 1.0f;
+  const float center_distance = (nx * nx) + (ny * ny);
+  const float center_foreground_alpha =
+      1.0f - smoothstep(0.72f, 1.18f, center_distance);
   const uint mask_x = min((source_x * mask_width_px) / width, mask_width_px - 1U);
   const uint mask_y = min((source_y * mask_height_px) / height, mask_height_px - 1U);
   const uchar mask_value = mask[(mask_y * mask_width_px) + mask_x];
@@ -80,7 +82,7 @@ __kernel void background_blur(__global const uchar *input,
       mask_mode == 2U ? clamp(((float)mask_value - (float)foreground_threshold) /
                                   (255.0f - (float)foreground_threshold),
                               0.0f, 1.0f)
-      : (mask_mode == 1U ? (center_foreground ? 1.0f : 0.0f)
+      : (mask_mode == 1U ? center_foreground_alpha
                          : (luma >= foreground_threshold ? 1.0f : 0.0f));
 
   float out_red = red;
@@ -446,54 +448,6 @@ struct Crop {
   double width;
   double height;
 };
-
-std::uint8_t clamp_to_byte(double value) noexcept {
-  const auto rounded = static_cast<int>(value + 0.5);
-  return static_cast<std::uint8_t>(std::clamp(rounded, 0, 255));
-}
-
-std::optional<Bounds> foreground_bounds(std::span<const std::uint8_t> bytes,
-                                        frame::PixelFormat format,
-                                        std::span<const std::size_t> strides,
-                                        std::uint32_t width,
-                                        std::uint32_t height,
-                                        std::uint8_t threshold) {
-  const auto layout_pixel_size = detail::packed_pixel_size(format);
-  const auto row_bytes = static_cast<std::size_t>(width) * layout_pixel_size;
-  if (strides.empty() || strides.front() < row_bytes) {
-    throw std::invalid_argument("frame stride is smaller than row size");
-  }
-
-  auto bounds = Bounds{width, height, 0U, 0U};
-  bool found = false;
-  for (std::uint32_t y = 0; y < height; ++y) {
-    const auto row_offset = static_cast<std::size_t>(y) * strides.front();
-    if (row_offset + row_bytes > bytes.size()) {
-      throw std::invalid_argument("frame data is smaller than stride layout");
-    }
-    for (std::uint32_t x = 0; x < width; ++x) {
-      const auto *pixel = bytes.data() + row_offset +
-                          (static_cast<std::size_t>(x) * layout_pixel_size);
-      const auto red = format == frame::PixelFormat::Bgr ? pixel[2] : pixel[0];
-      const auto green = pixel[1];
-      const auto blue = format == frame::PixelFormat::Bgr ? pixel[0] : pixel[2];
-      const auto luma =
-          clamp_to_byte((0.299 * red) + (0.587 * green) + (0.114 * blue));
-      if (luma < threshold) {
-        continue;
-      }
-      bounds.min_x = std::min(bounds.min_x, x);
-      bounds.min_y = std::min(bounds.min_y, y);
-      bounds.max_x = std::max(bounds.max_x, x);
-      bounds.max_y = std::max(bounds.max_y, y);
-      found = true;
-    }
-  }
-  if (!found) {
-    return std::nullopt;
-  }
-  return bounds;
-}
 
 std::optional<Bounds> mask_bounds(const ai::SegmentationMask &mask,
                                   std::uint8_t threshold) {
@@ -1139,19 +1093,12 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto saturation = static_cast<float>(saturation_);
   auto crop = Crop{0.0, 0.0, static_cast<double>(frame.width()),
                    static_cast<double>(frame.height())};
-  if (auto_frame_) {
+  if (auto_frame_ && mask.has_value()) {
     auto bounds = std::optional<Bounds>{};
-    if (mask.has_value()) {
-      bounds = mask_bounds(*mask, foreground_threshold_);
-    } else if (active_mask_mode != "tracked_center") {
-      bounds = foreground_bounds(bytes, frame.format(), strides, frame.width(),
-                                 frame.height(), foreground_threshold_);
-    }
+    bounds = mask_bounds(*mask, foreground_threshold_);
     if (bounds.has_value()) {
-      if (mask.has_value()) {
-        bounds = scale_bounds(*bounds, mask->width(), mask->height(),
-                              frame.width(), frame.height());
-      }
+      bounds = scale_bounds(*bounds, mask->width(), mask->height(),
+                            frame.width(), frame.height());
       crop = crop_from_bounds(*bounds, frame.width(), frame.height(),
                               target_fill_, max_zoom_);
     }

@@ -19,7 +19,7 @@ filters:
     backend: opencl
     auto_frame: true
     target_fill: 0.52
-    max_zoom: 1.25
+    max_zoom: 1.18
     mask_mode: onnx
     model_path: assets/models/person-segmentation.onnx
     provider: rocm
@@ -28,7 +28,7 @@ filters:
     input_shape: 1x3x256x256
     output_shape: 1x1x256x256
     inference_interval: 4
-    mask_smoothing: 0.35
+    mask_smoothing: 0.65
     mask_expand: 3
     mask_feather: 5
     invert_mask: true

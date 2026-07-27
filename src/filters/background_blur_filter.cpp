@@ -377,10 +377,10 @@ struct Bounds {
 };
 
 struct Crop {
-  std::uint32_t x;
-  std::uint32_t y;
-  std::uint32_t width;
-  std::uint32_t height;
+  double x;
+  double y;
+  double width;
+  double height;
 };
 
 std::uint8_t clamp_to_byte(double value) noexcept {
@@ -492,23 +492,83 @@ Crop crop_from_bounds(Bounds bounds, std::uint32_t frame_width,
     crop_width = crop_height * aspect;
   }
 
-  const auto crop_w = std::clamp(
-      static_cast<std::uint32_t>(std::ceil(crop_width)), 1U, frame_width);
-  const auto crop_h = std::clamp(
-      static_cast<std::uint32_t>(std::ceil(crop_height)), 1U, frame_height);
+  const auto crop_w =
+      std::clamp(std::ceil(crop_width), 1.0, static_cast<double>(frame_width));
+  const auto crop_h = std::clamp(std::ceil(crop_height), 1.0,
+                                 static_cast<double>(frame_height));
   const auto center_x =
       (static_cast<double>(bounds.min_x) + static_cast<double>(bounds.max_x)) /
       2.0;
   const auto center_y =
       (static_cast<double>(bounds.min_y) + static_cast<double>(bounds.max_y)) /
       2.0;
-  const auto crop_x = static_cast<std::uint32_t>(
-      std::clamp(static_cast<int>(std::round(center_x - (crop_w / 2.0))), 0,
-                 static_cast<int>(frame_width - crop_w)));
-  const auto crop_y = static_cast<std::uint32_t>(
-      std::clamp(static_cast<int>(std::round(center_y - (crop_h / 2.0))), 0,
-                 static_cast<int>(frame_height - crop_h)));
+  const auto crop_x = std::clamp(center_x - (crop_w / 2.0), 0.0,
+                                 static_cast<double>(frame_width) - crop_w);
+  const auto crop_y = std::clamp(center_y - (crop_h / 2.0), 0.0,
+                                 static_cast<double>(frame_height) - crop_h);
   return Crop{crop_x, crop_y, crop_w, crop_h};
+}
+
+Crop smooth_crop(Crop desired,
+                 std::optional<std::array<double, 4>> &previous_crop,
+                 std::uint32_t frame_width, std::uint32_t frame_height) {
+  if (!previous_crop.has_value()) {
+    previous_crop = {desired.x, desired.y, desired.width, desired.height};
+    return desired;
+  }
+
+  const auto previous = Crop{(*previous_crop)[0], (*previous_crop)[1],
+                             (*previous_crop)[2], (*previous_crop)[3]};
+  const auto previous_center_x = previous.x + (previous.width / 2.0);
+  const auto previous_center_y = previous.y + (previous.height / 2.0);
+  const auto desired_center_x = desired.x + (desired.width / 2.0);
+  const auto desired_center_y = desired.y + (desired.height / 2.0);
+  const auto movement = std::hypot(desired_center_x - previous_center_x,
+                                   desired_center_y - previous_center_y);
+  const auto size_delta = std::abs(desired.width - previous.width) +
+                          std::abs(desired.height - previous.height);
+  const auto dead_zone_pixels =
+      0.055 * static_cast<double>(std::min(frame_width, frame_height));
+  if (movement <= dead_zone_pixels && size_delta <= (dead_zone_pixels * 1.5)) {
+    return previous;
+  }
+
+  constexpr auto kSmoothing = 0.90;
+  constexpr auto kMaxCenterStepFraction = 0.025;
+  constexpr auto kMaxSizeStepFraction = 0.015;
+  const auto center_blend = 1.0 - kSmoothing;
+  const auto max_center_step =
+      kMaxCenterStepFraction *
+      static_cast<double>(std::min(frame_width, frame_height));
+  const auto max_width_step = kMaxSizeStepFraction * frame_width;
+  const auto max_height_step = kMaxSizeStepFraction * frame_height;
+
+  auto center_x =
+      previous_center_x +
+      std::clamp((desired_center_x - previous_center_x) * center_blend,
+                 -max_center_step, max_center_step);
+  auto center_y =
+      previous_center_y +
+      std::clamp((desired_center_y - previous_center_y) * center_blend,
+                 -max_center_step, max_center_step);
+  auto width = previous.width +
+               std::clamp((desired.width - previous.width) * center_blend,
+                          -max_width_step, max_width_step);
+  auto height = previous.height +
+                std::clamp((desired.height - previous.height) * center_blend,
+                           -max_height_step, max_height_step);
+
+  width = std::clamp(width, 1.0, static_cast<double>(frame_width));
+  height = std::clamp(height, 1.0, static_cast<double>(frame_height));
+  center_x = std::clamp(center_x, width / 2.0,
+                        static_cast<double>(frame_width) - (width / 2.0));
+  center_y = std::clamp(center_y, height / 2.0,
+                        static_cast<double>(frame_height) - (height / 2.0));
+
+  const auto smoothed =
+      Crop{center_x - (width / 2.0), center_y - (height / 2.0), width, height};
+  previous_crop = {smoothed.x, smoothed.y, smoothed.width, smoothed.height};
+  return smoothed;
 }
 
 cl_uint opencl_mask_mode(std::string_view mode) {
@@ -726,6 +786,11 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
           "onnx_rejected_" + fallback_mask_mode_;
       frame.metadata()["segmentation_mask_rejected"] =
           "coverage:" + std::to_string(usable_coverage);
+      if (last_good_person_mask_.has_value()) {
+        frame.metadata()["background_blur_mask"] = "onnx_previous";
+        frame.metadata()["segmentation_mask_reused_previous"] = "true";
+        return last_good_person_mask_;
+      }
       if (hint_mask.has_value()) {
         frame.metadata()["background_blur_mask"] = "onnx_hint_ellipse";
         frame.metadata()["segmentation_mask_hint_coverage"] = std::to_string(
@@ -748,6 +813,7 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
     frame.metadata()["background_blur_mask_refinement"] =
         "expand:" + std::to_string(mask_expand_) +
         ",feather:" + std::to_string(mask_feather_);
+    last_good_person_mask_ = mask;
     return mask;
   } catch (const std::exception &error) {
     frame.metadata()["background_blur_mask"] =
@@ -756,6 +822,11 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
       std::cerr << "background_blur_onnx_error=inference_failed message=\""
                 << error.what() << "\"\n";
       onnx_error_reported_ = true;
+    }
+    if (last_good_person_mask_.has_value()) {
+      frame.metadata()["background_blur_mask"] = "onnx_previous";
+      frame.metadata()["segmentation_mask_reused_previous"] = "true";
+      return last_good_person_mask_;
     }
     return std::nullopt;
   }
@@ -901,7 +972,8 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto brightness = static_cast<float>(brightness_);
   const auto contrast = static_cast<float>(contrast_);
   const auto saturation = static_cast<float>(saturation_);
-  auto crop = Crop{0U, 0U, frame.width(), frame.height()};
+  auto crop = Crop{0.0, 0.0, static_cast<double>(frame.width()),
+                   static_cast<double>(frame.height())};
   if (auto_frame_) {
     auto bounds = std::optional<Bounds>{};
     if (mask.has_value()) {
@@ -919,10 +991,27 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
                               target_fill_, max_zoom_);
     }
   }
-  const auto crop_x = static_cast<cl_uint>(crop.x);
-  const auto crop_y = static_cast<cl_uint>(crop.y);
-  const auto crop_width = static_cast<cl_uint>(crop.width);
-  const auto crop_height = static_cast<cl_uint>(crop.height);
+  if (auto_frame_) {
+    crop = smooth_crop(crop, previous_auto_frame_crop_, frame.width(),
+                       frame.height());
+  }
+  const auto crop_width = static_cast<std::uint32_t>(std::clamp(
+      static_cast<int>(std::round(crop.width)), 1, static_cast<int>(width)));
+  const auto crop_height = static_cast<std::uint32_t>(std::clamp(
+      static_cast<int>(std::round(crop.height)), 1, static_cast<int>(height)));
+  const auto crop_x = static_cast<std::uint32_t>(
+      std::clamp(static_cast<int>(std::round(crop.x)), 0,
+                 static_cast<int>(frame.width() - crop_width)));
+  const auto crop_y = static_cast<std::uint32_t>(
+      std::clamp(static_cast<int>(std::round(crop.y)), 0,
+                 static_cast<int>(frame.height() - crop_height)));
+  frame.metadata()["background_blur_auto_frame_crop"] =
+      std::to_string(crop_x) + "," + std::to_string(crop_y) + "," +
+      std::to_string(crop_width) + "," + std::to_string(crop_height);
+  const auto cl_crop_x = static_cast<cl_uint>(crop_x);
+  const auto cl_crop_y = static_cast<cl_uint>(crop_y);
+  const auto cl_crop_width = static_cast<cl_uint>(crop_width);
+  const auto cl_crop_height = static_cast<cl_uint>(crop_height);
   const auto mask_mode = opencl_mask_mode(active_mask_mode);
   const auto mask_width_arg = static_cast<cl_uint>(mask_width_px);
   const auto mask_height_arg = static_cast<cl_uint>(mask_height_px);
@@ -945,10 +1034,10 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   error |= clSetKernelArg(kernel, 12, sizeof(float), &brightness);
   error |= clSetKernelArg(kernel, 13, sizeof(float), &contrast);
   error |= clSetKernelArg(kernel, 14, sizeof(float), &saturation);
-  error |= clSetKernelArg(kernel, 15, sizeof(cl_uint), &crop_x);
-  error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &crop_y);
-  error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &crop_width);
-  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &crop_height);
+  error |= clSetKernelArg(kernel, 15, sizeof(cl_uint), &cl_crop_x);
+  error |= clSetKernelArg(kernel, 16, sizeof(cl_uint), &cl_crop_y);
+  error |= clSetKernelArg(kernel, 17, sizeof(cl_uint), &cl_crop_width);
+  error |= clSetKernelArg(kernel, 18, sizeof(cl_uint), &cl_crop_height);
   error |= clSetKernelArg(kernel, 19, sizeof(cl_uint), &mask_mode);
   error |= clSetKernelArg(kernel, 20, sizeof(cl_uint), &mask_width_arg);
   error |= clSetKernelArg(kernel, 21, sizeof(cl_uint), &mask_height_arg);

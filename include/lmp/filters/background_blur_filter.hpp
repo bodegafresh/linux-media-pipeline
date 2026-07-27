@@ -4,6 +4,7 @@
 #include "lmp/ai/segmentation_mask.hpp"
 #include "lmp/filters/video_filter.hpp"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -72,6 +73,8 @@ private:
   double max_mask_coverage_;
   double hint_y_offset_;
   mutable std::unique_ptr<ai::OnnxRuntimeEngine> onnx_engine_;
+  mutable std::optional<ai::SegmentationMask> last_good_person_mask_;
+  mutable std::optional<std::array<double, 4>> previous_auto_frame_crop_;
   mutable bool onnx_error_reported_;
 };
 

@@ -197,7 +197,7 @@ SegmentationMask largest_component_mask(const SegmentationMask &mask,
 
   auto values = std::vector<std::uint8_t>(size, 0U);
   for (const auto index : best_component) {
-    values[index] = 255U;
+    values[index] = mask.values()[index];
   }
   return SegmentationMask{width, height, std::move(values)};
 }

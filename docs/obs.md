@@ -101,6 +101,36 @@ preset:
 Place images, GIFs, or videos under `assets/backgrounds/` and update
 `background_path` in the preset.
 
+## Horizontal And Vertical Outputs
+
+For a normal stream plus a reels/shorts layout, run one capture pipeline and two
+V4L2 outputs:
+
+```bash
+./scripts/setup-loopback.sh 20 lmp-horizontal
+./scripts/setup-loopback.sh 21 lmp-vertical
+./scripts/stream.sh gopro-dual /dev/video20 /dev/video21
+```
+
+This decodes the GoPro UDP stream once, then branches in-process:
+
+```text
+GoPro UDP -> FFmpeg decode -> horizontal preset -> /dev/video20
+                         `-> vertical preset   -> /dev/video21
+```
+
+The default dual presets are:
+
+- `config/presets/dual-horizontal.yaml`: `1280x720`, image background,
+  `/dev/video20`.
+- `config/presets/dual-vertical.yaml`: `720x1280`, video background,
+  `/dev/video21`.
+
+Both outputs must use the same FPS to stay synchronized. The resolutions and
+filters can differ. In OBS, add two independent Video Capture Device sources:
+one for `/dev/video20` in a horizontal scene and one for `/dev/video21` in a
+vertical scene.
+
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because
 `assets/models/pphumanseg.onnx` is missing or incompatible.
@@ -117,6 +147,52 @@ LMP_FFMPEG_LOG_LEVEL=error ./scripts/stream.sh gopro-udp /dev/video20 config/pre
 1. Add a Video Capture Device source.
 2. Select `linux-media-pipeline` or `/dev/video20`.
 3. Match the same resolution and FPS as the pipeline output.
+
+## Restream And Live Platforms
+
+If OBS keeps streaming but Facebook or YouTube end the live after a few seconds,
+first treat it as an encoder or platform-ingest compatibility issue. The V4L2
+camera is only an OBS source; Restream, Facebook, and YouTube validate the final
+encoded RTMP stream that OBS sends.
+
+Use this conservative baseline for the first stable multi-platform test:
+
+- OBS Video: `1280x720`, `30 FPS`.
+- OBS Output Mode: `Advanced`.
+- Encoder: `x264` with `veryfast` for the first test, or AMD hardware H.264
+  only after the x264 test is stable.
+- Rate Control: `CBR`.
+- Video Bitrate: `4000 Kbps` for 720p30.
+- Keyframe Interval: `2` seconds.
+- Profile: `Main`.
+- Audio: `AAC`, stereo, `44.1 kHz` or `48 kHz`, `128-160 Kbps`.
+- OBS Advanced color: `NV12`, color space `709`.
+
+After a 10 minute stable test, 1080p30 is reasonable with `4500-6000 Kbps`.
+Keep OBS FPS at `30` because the virtual camera currently outputs 30 FPS; using
+60 FPS in OBS duplicates frames and adds encoder pressure without adding real
+camera motion.
+
+Validate in this order:
+
+1. Stream from OBS directly to an unlisted YouTube test for 5-10 minutes.
+2. Stream from OBS to Restream with only YouTube enabled for 5-10 minutes.
+3. Enable Facebook alone through Restream for 5-10 minutes.
+4. Enable YouTube and Facebook together only after both single-destination tests
+   are stable.
+
+During each test, watch:
+
+- OBS `Stats`: dropped frames, skipped frames, encoder overload, reconnects.
+- Restream stream health: bitrate, keyframe interval, FPS, and destination
+  errors.
+- Platform dashboards: YouTube Live Control Room and Facebook Live Producer
+  warnings.
+
+If YouTube and Facebook end but OBS still looks connected to Restream, the most
+useful evidence is the OBS log plus Restream channel-health error. In OBS use
+`Help > Log Files > Upload Current Log File`, or inspect
+`~/.config/obs-studio/logs/` on Linux.
 
 ## Other Applications
 

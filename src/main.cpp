@@ -11,13 +11,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -36,6 +39,11 @@ void print_help() {
       << "  --check-output   Open the configured V4L2 output device.\n"
       << "  --stream-live    Decode configured capture with FFmpeg and stream "
          "to V4L2.\n"
+      << "  --stream-live-multi\n"
+         "                   Decode once and stream to multiple V4L2 outputs.\n"
+      << "  --output-config PATH\n"
+         "                   Add an output branch config for multi-output "
+         "mode.\n"
       << "  --test-pattern   Stream a live RGB test pattern to V4L2 for OBS.\n"
       << "  --stats-every N  Print runtime FPS/latency stats every N "
          "seconds.\n"
@@ -536,6 +544,139 @@ pipeline_plan(const std::vector<lmp::config::FilterConfig> &filters) {
   return result;
 }
 
+struct OutputBranch {
+  lmp::config::AppConfig config;
+  lmp::filters::FilterPipeline pipeline;
+  std::string filters_active;
+  std::string plan;
+  std::unique_ptr<lmp::output::V4l2Output> output;
+};
+
+std::uint8_t bilinear_channel(std::span<const std::uint8_t> source,
+                              std::uint32_t source_width,
+                              std::uint32_t source_height, double source_x,
+                              double source_y, std::size_t channel) {
+  source_x = std::clamp(source_x, 0.0, static_cast<double>(source_width - 1U));
+  source_y = std::clamp(source_y, 0.0, static_cast<double>(source_height - 1U));
+  const auto x0 = static_cast<std::uint32_t>(std::floor(source_x));
+  const auto y0 = static_cast<std::uint32_t>(std::floor(source_y));
+  const auto x1 = std::min(x0 + 1U, source_width - 1U);
+  const auto y1 = std::min(y0 + 1U, source_height - 1U);
+  const auto tx = source_x - static_cast<double>(x0);
+  const auto ty = source_y - static_cast<double>(y0);
+  const auto sample = [&](std::uint32_t x, std::uint32_t y) {
+    const auto index =
+        ((static_cast<std::size_t>(y) * source_width) + x) * 3U + channel;
+    return static_cast<double>(source[index]);
+  };
+  const auto top = (sample(x0, y0) * (1.0 - tx)) + (sample(x1, y0) * tx);
+  const auto bottom = (sample(x0, y1) * (1.0 - tx)) + (sample(x1, y1) * tx);
+  const auto value = (top * (1.0 - ty)) + (bottom * ty);
+  return static_cast<std::uint8_t>(
+      std::clamp(static_cast<int>(std::round(value)), 0, 255));
+}
+
+lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
+                                     std::uint32_t target_width,
+                                     std::uint32_t target_height) {
+  if (source.format() != lmp::frame::PixelFormat::Rgb) {
+    throw std::runtime_error("multi-output resize requires RGB frames");
+  }
+  if (source.width() == target_width && source.height() == target_height) {
+    return source;
+  }
+
+  const auto source_aspect =
+      static_cast<double>(source.width()) / static_cast<double>(source.height());
+  const auto target_aspect =
+      static_cast<double>(target_width) / static_cast<double>(target_height);
+  auto crop_width = static_cast<double>(source.width());
+  auto crop_height = static_cast<double>(source.height());
+  if (source_aspect > target_aspect) {
+    crop_width = crop_height * target_aspect;
+  } else {
+    crop_height = crop_width / target_aspect;
+  }
+  const auto crop_x = (static_cast<double>(source.width()) - crop_width) / 2.0;
+  const auto crop_y =
+      (static_cast<double>(source.height()) - crop_height) / 2.0;
+
+  auto output_bytes = std::vector<std::uint8_t>{};
+  output_bytes.resize(static_cast<std::size_t>(target_width) * target_height *
+                      3U);
+  const auto input = source.data();
+  for (std::uint32_t y = 0; y < target_height; ++y) {
+    const auto source_y =
+        crop_y + ((static_cast<double>(y) + 0.5) * crop_height /
+                  static_cast<double>(target_height)) -
+        0.5;
+    for (std::uint32_t x = 0; x < target_width; ++x) {
+      const auto source_x =
+          crop_x + ((static_cast<double>(x) + 0.5) * crop_width /
+                    static_cast<double>(target_width)) -
+          0.5;
+      const auto output_index =
+          ((static_cast<std::size_t>(y) * target_width) + x) * 3U;
+      output_bytes[output_index] =
+          bilinear_channel(input, source.width(), source.height(), source_x,
+                           source_y, 0U);
+      output_bytes[output_index + 1U] =
+          bilinear_channel(input, source.width(), source.height(), source_x,
+                           source_y, 1U);
+      output_bytes[output_index + 2U] =
+          bilinear_channel(input, source.width(), source.height(), source_x,
+                           source_y, 2U);
+    }
+  }
+
+  auto metadata = source.metadata();
+  metadata["resize_cover"] = std::to_string(source.width()) + "x" +
+                             std::to_string(source.height()) + "->" +
+                             std::to_string(target_width) + "x" +
+                             std::to_string(target_height);
+  return lmp::frame::Frame{
+      target_width,
+      target_height,
+      lmp::frame::PixelFormat::Rgb,
+      std::move(output_bytes),
+      std::vector<std::size_t>{static_cast<std::size_t>(target_width) * 3U},
+      source.timestamp(),
+      std::move(metadata)};
+}
+
+void validate_live_output_config(const lmp::config::AppConfig &config) {
+  if (config.output.type != "v4l2") {
+    throw std::runtime_error("live output requires v4l2 output type");
+  }
+  if (config.output.pixel_format != "RGB24") {
+    throw std::runtime_error("live output requires RGB24 pixel_format");
+  }
+}
+
+OutputBranch make_output_branch(lmp::config::AppConfig config,
+                                const lmp::filters::FilterRegistry &registry) {
+  validate_live_output_config(config);
+  auto pipeline =
+      lmp::filters::FilterPipeline::from_config(config.filters, registry);
+  auto output = std::make_unique<lmp::output::V4l2Output>(config.output.device);
+  output->open();
+  output->configure_rgb24(static_cast<std::uint32_t>(config.output.width),
+                          static_cast<std::uint32_t>(config.output.height),
+                          static_cast<std::uint32_t>(config.output.fps));
+  return OutputBranch{std::move(config), std::move(pipeline),
+                      active_filter_list(config.filters),
+                      pipeline_plan(config.filters), std::move(output)};
+}
+
+void assert_same_capture(const lmp::config::AppConfig &primary,
+                         const lmp::config::AppConfig &branch) {
+  if (branch.capture.type != primary.capture.type ||
+      branch.capture.address != primary.capture.address) {
+    throw std::runtime_error(
+        "multi-output branch configs must use the same capture source");
+  }
+}
+
 lmp::frame::Frame make_test_pattern(std::uint32_t width, std::uint32_t height,
                                     std::uint32_t frame_index) {
   std::vector<std::uint8_t> bytes;
@@ -913,6 +1054,7 @@ int main(int argc, char **argv) {
     auto open_capture = false;
     auto check_output = false;
     auto stream_live = false;
+    auto stream_live_multi = false;
     auto test_pattern = false;
     auto list_providers = false;
     auto verify_onnx_gpu = false;
@@ -925,6 +1067,7 @@ int main(int argc, char **argv) {
         std::filesystem::path{"artifacts/segmentation-diagnostics"};
     auto segment_models = std::vector<std::string>{};
     auto segment_providers = std::vector<std::string>{"cpu", "rocm"};
+    auto output_config_paths = std::vector<std::filesystem::path>{};
     auto stats_every = stats_interval_from_env();
     for (int index = 1; index < argc; ++index) {
       const auto option = std::string_view{argv[index]};
@@ -950,6 +1093,14 @@ int main(int argc, char **argv) {
         check_output = true;
       } else if (option == "--stream-live") {
         stream_live = true;
+      } else if (option == "--stream-live-multi") {
+        stream_live_multi = true;
+      } else if (option == "--output-config") {
+        ++index;
+        if (index >= argc) {
+          throw std::runtime_error("--output-config requires a path");
+        }
+        output_config_paths.emplace_back(argv[index]);
       } else if (option == "--test-pattern") {
         test_pattern = true;
       } else if (option == "--list-onnx-providers") {
@@ -1010,6 +1161,10 @@ int main(int argc, char **argv) {
     const lmp::config::ConfigLoader loader;
     const auto config = loader.load_file(config_path);
     const auto registry = lmp::filters::create_default_registry();
+    if (stream_live && stream_live_multi) {
+      throw std::runtime_error(
+          "--stream-live and --stream-live-multi are mutually exclusive");
+    }
     if (verify_onnx_gpu) {
       verify_onnx_provider(config, onnx_provider);
       return 0;
@@ -1055,6 +1210,87 @@ int main(int argc, char **argv) {
     }
     if (open_capture) {
       capture.open();
+    }
+
+    if (stream_live_multi) {
+      if (output_config_paths.empty()) {
+        throw std::runtime_error(
+            "--stream-live-multi requires at least one --output-config");
+      }
+      auto branches = std::vector<OutputBranch>{};
+      branches.reserve(output_config_paths.size() + 1U);
+      branches.push_back(make_output_branch(config, registry));
+      for (const auto &path : output_config_paths) {
+        auto branch_config = loader.load_file(path);
+        assert_same_capture(config, branch_config);
+        if (branch_config.output.fps != config.output.fps) {
+          throw std::runtime_error(
+              "multi-output branch configs must use the same output.fps");
+        }
+        branches.push_back(make_output_branch(std::move(branch_config),
+                                              registry));
+      }
+
+      const auto decode_width = static_cast<std::uint32_t>(config.output.width);
+      const auto decode_height =
+          static_cast<std::uint32_t>(config.output.height);
+      const auto fps = static_cast<std::uint32_t>(config.output.fps);
+      lmp::decoder::FfmpegDecoder decoder{config.capture.address, decode_width,
+                                          decode_height};
+      std::cout << "linux-media-pipeline " << lmp::version_string()
+                << " streaming live=true multi_output=true capture="
+                << capture.type() << " input=" << config.capture.address
+                << " decode_width=" << decode_width
+                << " decode_height=" << decode_height << " fps=" << fps
+                << " outputs=" << branches.size()
+                << " filter_backend=requested:" << config.gpu.backend << '\n';
+      for (std::size_t branch_index = 0; branch_index < branches.size();
+           ++branch_index) {
+        const auto &branch = branches[branch_index];
+        std::cout << "output_branch index=" << branch_index
+                  << " device=" << branch.output->device()
+                  << " width=" << branch.config.output.width
+                  << " height=" << branch.config.output.height
+                  << " fps=" << branch.config.output.fps
+                  << " filters=" << branch.pipeline.size()
+                  << " filters_active=" << branch.filters_active
+                  << " pipeline_plan=\"" << branch.plan << "\"\n";
+      }
+
+      RuntimeMetadataReporter runtime_metadata;
+      StatsReporter stats{stats_every};
+      const auto frame_period =
+          std::chrono::duration<double>{1.0 / static_cast<double>(fps)};
+      auto next_output_time = std::chrono::steady_clock::now() + frame_period;
+      while (true) {
+        const auto frame_started = std::chrono::steady_clock::now();
+        auto source_frame = decoder.read_frame();
+        for (auto &branch : branches) {
+          auto branch_frame = resize_cover_rgb24(
+              source_frame,
+              static_cast<std::uint32_t>(branch.config.output.width),
+              static_cast<std::uint32_t>(branch.config.output.height));
+          branch.pipeline.process(branch_frame);
+          runtime_metadata.report(branch_frame.metadata());
+          branch.output->write(branch_frame);
+        }
+
+        auto dropped_frames = std::uint64_t{0U};
+        auto now = std::chrono::steady_clock::now();
+        next_output_time += frame_period;
+        constexpr auto kMaxDropsPerIteration = 3U;
+        while (now > next_output_time + frame_period &&
+               dropped_frames < kMaxDropsPerIteration) {
+          static_cast<void>(decoder.read_frame());
+          next_output_time += frame_period;
+          ++dropped_frames;
+          now = std::chrono::steady_clock::now();
+        }
+        if (now > next_output_time + (4 * frame_period)) {
+          next_output_time = now;
+        }
+        stats.observe(now - frame_started, dropped_frames);
+      }
     }
 
     lmp::output::V4l2Output output{config.output.device};

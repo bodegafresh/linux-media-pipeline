@@ -125,6 +125,29 @@ int main() {
   ok = expect(config.output.height == 720U, "output height") && ok;
   ok = expect(config.output.fps == 30U, "output fps") && ok;
 
+  const auto dual_horizontal =
+      loader.load_file("config/presets/dual-horizontal.yaml");
+  const auto dual_vertical =
+      loader.load_file("config/presets/dual-vertical.yaml");
+  ok = expect(dual_horizontal.capture.address == dual_vertical.capture.address,
+              "dual output shared capture") &&
+       ok;
+  ok = expect(dual_horizontal.output.device == "/dev/video20",
+              "dual horizontal device") &&
+       ok;
+  ok = expect(dual_vertical.output.device == "/dev/video21",
+              "dual vertical device") &&
+       ok;
+  ok = expect(dual_vertical.output.width == 720U,
+              "dual vertical output width") &&
+       ok;
+  ok = expect(dual_vertical.output.height == 1280U,
+              "dual vertical output height") &&
+       ok;
+  ok = expect(dual_horizontal.output.fps == dual_vertical.output.fps,
+              "dual output fps match") &&
+       ok;
+
   auto frame = lmp::frame::Frame{
       2U,
       2U,

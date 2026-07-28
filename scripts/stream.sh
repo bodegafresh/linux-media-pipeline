@@ -6,6 +6,7 @@ usage() {
 Usage:
   ./scripts/stream.sh test-pattern [output_device] [config] [lmp_args...]
   ./scripts/stream.sh gopro-udp [output_device] [config] [lmp_args...]
+  ./scripts/stream.sh gopro-dual [horizontal_device] [vertical_device] [horizontal_config] [vertical_config] [lmp_args...]
   ./scripts/stream.sh doctor [output_device] [config]
   ./scripts/stream.sh install-model [default|all|mediapipe|pphumanseg]
   ./scripts/stream.sh usb [input_device] [output_device] [width] [height] [fps]
@@ -15,6 +16,7 @@ Examples:
   ./scripts/stream.sh gopro-udp
   ./scripts/stream.sh gopro-udp /dev/video20 config/presets/clean.yaml
   ./scripts/stream.sh gopro-udp /dev/video20 config/presets/ai-background-blur.yaml --stats-every 5
+  ./scripts/stream.sh gopro-dual /dev/video20 /dev/video21
   ./scripts/stream.sh doctor /dev/video20 config/presets/ai-background-blur.yaml
   ./scripts/stream.sh install-model all
   ./scripts/stream.sh usb /dev/video0 /dev/video20 1280 720 30
@@ -156,6 +158,28 @@ case "${mode}" in
     echo "Streaming configured GoPro UDP capture through C++ pipeline to ${output_device}."
     echo "Runtime settings come from ${config}."
     exec ./build/dev/lmp --config "${config}" --stream-live "$@"
+    ;;
+
+  gopro-dual)
+    horizontal_device="${1:-/dev/video20}"
+    vertical_device="${2:-/dev/video21}"
+    horizontal_config="${3:-config/presets/dual-horizontal.yaml}"
+    vertical_config="${4:-config/presets/dual-vertical.yaml}"
+    shift $(( $# >= 1 ? 1 : 0 ))
+    shift $(( $# >= 1 ? 1 : 0 ))
+    shift $(( $# >= 1 ? 1 : 0 ))
+    shift $(( $# >= 1 ? 1 : 0 ))
+    ensure_loopback "${horizontal_device}"
+    ensure_loopback "${vertical_device}"
+    ./scripts/build.sh
+    echo "Streaming one GoPro UDP capture to two virtual cameras."
+    echo "Horizontal: ${horizontal_device} using ${horizontal_config}."
+    echo "Vertical:   ${vertical_device} using ${vertical_config}."
+    exec ./build/dev/lmp \
+      --config "${horizontal_config}" \
+      --stream-live-multi \
+      --output-config "${vertical_config}" \
+      "$@"
     ;;
 
   usb)

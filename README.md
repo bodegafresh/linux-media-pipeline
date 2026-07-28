@@ -136,6 +136,16 @@ Run with a filter preset:
 ./scripts/stream.sh gopro-udp /dev/video20 config/presets/debug.yaml
 ```
 
+For simultaneous horizontal and vertical OBS sources from one GoPro stream:
+
+```bash
+./scripts/stream.sh gopro-dual /dev/video20 /dev/video21
+```
+
+This decodes the camera once and writes two filtered outputs:
+`config/presets/dual-horizontal.yaml` to `/dev/video20` and
+`config/presets/dual-vertical.yaml` to `/dev/video21`.
+
 The application prints active filters when streaming starts:
 
 ```text

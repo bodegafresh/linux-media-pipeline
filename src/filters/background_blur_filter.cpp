@@ -1252,6 +1252,10 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
     if (bounds.has_value()) {
       bounds = scale_bounds(*bounds, mask->width(), mask->height(),
                             frame.width(), frame.height());
+      frame.metadata()["segmentation_mask_bounds"] =
+          std::to_string(bounds->min_x) + "," + std::to_string(bounds->min_y) +
+          "," + std::to_string(bounds->max_x - bounds->min_x + 1U) + "," +
+          std::to_string(bounds->max_y - bounds->min_y + 1U);
       crop = crop_from_bounds(*bounds, frame.width(), frame.height(),
                               target_fill_, max_zoom_);
     }

@@ -122,17 +122,17 @@ The default dual presets are:
 
 - `config/presets/dual-horizontal.yaml`: `1280x720`, image background,
   `/dev/video20`.
-- `config/presets/dual-vertical.yaml`: `720x1280`, image background,
-  `/dev/video21`.
+- `config/presets/dual-vertical.yaml`: `720x1280`, smart 9:16 crop reusing
+  the primary processed frame, `/dev/video21`.
 
 Both outputs must use the same FPS to stay synchronized. The resolutions and
 filters can differ. In OBS, add two independent Video Capture Device sources:
 one for `/dev/video20` in a horizontal scene and one for `/dev/video21` in a
 vertical scene.
 
-The vertical branch applies its AI framing on the full decoded frame before the
-final 9:16 crop, so it can follow the person farther left or right than a simple
-center crop.
+The vertical branch reuses the primary AI/background result and then applies a
+smart 9:16 crop. The crop reads `segmentation_mask_bounds`, keeps headroom, and
+tries to keep the visible body inside the portrait safe area.
 
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because

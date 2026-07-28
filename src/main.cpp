@@ -23,6 +23,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -497,6 +498,30 @@ bool bool_parameter(const lmp::config::FilterConfig &filter,
   return default_value;
 }
 
+std::optional<std::array<double, 4>>
+parse_csv_rect(const lmp::frame::Frame::Metadata &metadata,
+               std::string_view key) {
+  const auto found = metadata.find(std::string{key});
+  if (found == metadata.end()) {
+    return std::nullopt;
+  }
+  auto values = std::array<double, 4>{};
+  auto input = std::istringstream{found->second};
+  auto token = std::string{};
+  for (std::size_t index = 0; index < values.size(); ++index) {
+    if (!std::getline(input, token, ',')) {
+      return std::nullopt;
+    }
+    char *end = nullptr;
+    const auto value = std::strtod(token.c_str(), &end);
+    if (end == token.c_str()) {
+      return std::nullopt;
+    }
+    values[index] = value;
+  }
+  return values;
+}
+
 std::string string_parameter(const lmp::config::FilterConfig &filter,
                              std::string_view name,
                              std::string_view default_value) {
@@ -599,9 +624,36 @@ lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
   } else {
     crop_height = crop_width / target_aspect;
   }
-  const auto crop_x = (static_cast<double>(source.width()) - crop_width) / 2.0;
-  const auto crop_y =
-      (static_cast<double>(source.height()) - crop_height) / 2.0;
+  auto crop_x = (static_cast<double>(source.width()) - crop_width) / 2.0;
+  auto crop_y = (static_cast<double>(source.height()) - crop_height) / 2.0;
+  if (target_aspect < source_aspect) {
+    if (const auto bounds =
+            parse_csv_rect(source.metadata(), "segmentation_mask_bounds")) {
+      const auto person_x = (*bounds)[0];
+      const auto person_y = (*bounds)[1];
+      const auto person_w = (*bounds)[2];
+      const auto person_h = (*bounds)[3];
+      const auto person_center_x = person_x + (person_w / 2.0);
+      constexpr auto kHorizontalPadding = 0.16;
+      constexpr auto kHeadroom = 0.12;
+      auto desired_x = person_center_x - (crop_width / 2.0);
+      const auto range_low =
+          (person_x + person_w) - (crop_width * (1.0 - kHorizontalPadding));
+      const auto range_high = person_x - (crop_width * kHorizontalPadding);
+      if (range_low <= range_high) {
+        desired_x = std::clamp(desired_x, range_low, range_high);
+      }
+      crop_x = std::clamp(desired_x, 0.0,
+                          static_cast<double>(source.width()) - crop_width);
+
+      const auto desired_y = person_y - (crop_height * kHeadroom);
+      const auto hands_or_torso_y =
+          (person_y + person_h) - (crop_height * 0.88);
+      crop_y = std::min(desired_y, hands_or_torso_y);
+      crop_y = std::clamp(crop_y, 0.0,
+                          static_cast<double>(source.height()) - crop_height);
+    }
+  }
 
   auto output_bytes = std::vector<std::uint8_t>{};
   output_bytes.resize(static_cast<std::size_t>(target_width) * target_height *
@@ -703,13 +755,13 @@ public:
     condition_.notify_all();
   }
 
-  lmp::frame::Frame::Metadata wait() {
+  lmp::frame::Frame wait() {
     auto lock = std::unique_lock<std::mutex>{mutex_};
     condition_.wait(lock, [this] { return done_; });
     if (!error_.empty()) {
       throw std::runtime_error(error_);
     }
-    return metadata_;
+    return output_frame_.value();
   }
 
   [[nodiscard]] const OutputBranch &branch() const noexcept { return branch_; }
@@ -737,7 +789,7 @@ private:
             static_cast<std::uint32_t>(branch_.config.output.height));
         branch_.output->write(branch_frame);
         auto lock = std::lock_guard<std::mutex>{mutex_};
-        metadata_ = branch_frame.metadata();
+        output_frame_ = std::move(branch_frame);
         done_ = true;
       } catch (const std::exception &exception) {
         auto lock = std::lock_guard<std::mutex>{mutex_};
@@ -753,7 +805,7 @@ private:
   std::mutex mutex_;
   std::condition_variable condition_;
   std::optional<lmp::frame::Frame> input_frame_;
-  lmp::frame::Frame::Metadata metadata_;
+  std::optional<lmp::frame::Frame> output_frame_;
   std::string error_;
   bool work_ready_ = false;
   bool done_ = true;
@@ -1349,10 +1401,15 @@ int main(int argc, char **argv) {
                   << " pipeline_plan=\"" << branch.plan << "\"\n";
       }
       auto workers = std::vector<std::unique_ptr<OutputBranchWorker>>{};
+      auto reuse_branches = std::vector<OutputBranch>{};
       workers.reserve(branches.size());
       for (auto &branch : branches) {
-        workers.push_back(
-            std::make_unique<OutputBranchWorker>(std::move(branch)));
+        if (branch.pipeline.size() == 0U) {
+          reuse_branches.push_back(std::move(branch));
+        } else {
+          workers.push_back(
+              std::make_unique<OutputBranchWorker>(std::move(branch)));
+        }
       }
 
       RuntimeMetadataReporter runtime_metadata;
@@ -1366,8 +1423,24 @@ int main(int argc, char **argv) {
         for (auto &worker : workers) {
           worker->submit(source_frame);
         }
+        auto primary_frame = std::optional<lmp::frame::Frame>{};
         for (auto &worker : workers) {
-          runtime_metadata.report(worker->wait());
+          auto processed_frame = worker->wait();
+          runtime_metadata.report(processed_frame.metadata());
+          if (!primary_frame.has_value()) {
+            primary_frame = std::move(processed_frame);
+          }
+        }
+        if (!primary_frame.has_value()) {
+          primary_frame = source_frame;
+        }
+        for (auto &branch : reuse_branches) {
+          auto branch_frame = resize_cover_rgb24(
+              *primary_frame,
+              static_cast<std::uint32_t>(branch.config.output.width),
+              static_cast<std::uint32_t>(branch.config.output.height));
+          runtime_metadata.report(branch_frame.metadata());
+          branch.output->write(branch_frame);
         }
 
         auto dropped_frames = std::uint64_t{0U};

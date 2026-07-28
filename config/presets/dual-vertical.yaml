@@ -18,16 +18,16 @@ filters:
     enabled: true
     backend: opencl
     auto_frame: true
-    target_fill: 0.72
-    max_zoom: 1.25
+    target_fill: 0.78
+    max_zoom: 1.35
     mask_mode: onnx
     model_path: assets/models/pphumanseg.onnx
     provider: cpu
     allow_provider_fallback: false
     input_shape: 1x3x192x192
     output_shape: 1x1x192x192
-    inference_interval: 5
-    mask_smoothing: 0.55
+    inference_interval: 8
+    mask_smoothing: 0.62
     mask_expand: 4
     mask_feather: 5
     keep_largest_component: true
@@ -36,10 +36,10 @@ filters:
     fallback_mask_mode: tracked_center
     mask_width: 0.56
     mask_height: 0.78
-    radius: 8
+    radius: 6
     foreground_threshold: 128
-    background_mode: video
-    background_path: assets/backgrounds/animated-background.mp4
+    background_mode: image
+    background_path: assets/backgrounds/static-background.jpg
     background_color: x111827
     brightness: 2
     contrast: 1.05

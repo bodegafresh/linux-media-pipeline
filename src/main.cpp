@@ -11,15 +11,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <condition_variable>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -553,11 +554,6 @@ struct OutputBranch {
   std::unique_ptr<lmp::output::V4l2Output> output;
 };
 
-struct ProcessedBranchFrame {
-  std::size_t branch_index;
-  lmp::frame::Frame frame;
-};
-
 std::uint8_t bilinear_channel(std::span<const std::uint8_t> source,
                               std::uint32_t source_width,
                               std::uint32_t source_height, double source_x,
@@ -673,6 +669,96 @@ OutputBranch make_output_branch(lmp::config::AppConfig config,
                       active_filter_list(config.filters),
                       pipeline_plan(config.filters), std::move(output)};
 }
+
+class OutputBranchWorker {
+public:
+  explicit OutputBranchWorker(OutputBranch branch)
+      : branch_(std::move(branch)), worker_([this] { run(); }) {}
+
+  ~OutputBranchWorker() {
+    {
+      const auto lock = std::lock_guard<std::mutex>{mutex_};
+      stop_ = true;
+      work_ready_ = true;
+    }
+    condition_.notify_all();
+    if (worker_.joinable()) {
+      worker_.join();
+    }
+  }
+
+  OutputBranchWorker(const OutputBranchWorker &) = delete;
+  OutputBranchWorker &operator=(const OutputBranchWorker &) = delete;
+  OutputBranchWorker(OutputBranchWorker &&) = delete;
+  OutputBranchWorker &operator=(OutputBranchWorker &&) = delete;
+
+  void submit(const lmp::frame::Frame &frame) {
+    auto lock = std::unique_lock<std::mutex>{mutex_};
+    condition_.wait(lock, [this] { return done_ && !work_ready_; });
+    input_frame_ = frame;
+    done_ = false;
+    work_ready_ = true;
+    error_.clear();
+    lock.unlock();
+    condition_.notify_all();
+  }
+
+  lmp::frame::Frame::Metadata wait() {
+    auto lock = std::unique_lock<std::mutex>{mutex_};
+    condition_.wait(lock, [this] { return done_; });
+    if (!error_.empty()) {
+      throw std::runtime_error(error_);
+    }
+    return metadata_;
+  }
+
+  [[nodiscard]] const OutputBranch &branch() const noexcept { return branch_; }
+
+private:
+  void run() {
+    while (true) {
+      auto frame = std::optional<lmp::frame::Frame>{};
+      {
+        auto lock = std::unique_lock<std::mutex>{mutex_};
+        condition_.wait(lock, [this] { return work_ready_; });
+        if (stop_) {
+          return;
+        }
+        frame = std::move(input_frame_);
+        input_frame_.reset();
+        work_ready_ = false;
+      }
+
+      try {
+        auto branch_frame = std::move(*frame);
+        branch_.pipeline.process(branch_frame);
+        branch_frame = resize_cover_rgb24(
+            branch_frame, static_cast<std::uint32_t>(branch_.config.output.width),
+            static_cast<std::uint32_t>(branch_.config.output.height));
+        branch_.output->write(branch_frame);
+        auto lock = std::lock_guard<std::mutex>{mutex_};
+        metadata_ = branch_frame.metadata();
+        done_ = true;
+      } catch (const std::exception &exception) {
+        auto lock = std::lock_guard<std::mutex>{mutex_};
+        error_ = exception.what();
+        done_ = true;
+      }
+      condition_.notify_all();
+    }
+  }
+
+  OutputBranch branch_;
+  std::thread worker_;
+  std::mutex mutex_;
+  std::condition_variable condition_;
+  std::optional<lmp::frame::Frame> input_frame_;
+  lmp::frame::Frame::Metadata metadata_;
+  std::string error_;
+  bool work_ready_ = false;
+  bool done_ = true;
+  bool stop_ = false;
+};
 
 void assert_same_capture(const lmp::config::AppConfig &primary,
                          const lmp::config::AppConfig &branch) {
@@ -1262,6 +1348,12 @@ int main(int argc, char **argv) {
                   << " filters_active=" << branch.filters_active
                   << " pipeline_plan=\"" << branch.plan << "\"\n";
       }
+      auto workers = std::vector<std::unique_ptr<OutputBranchWorker>>{};
+      workers.reserve(branches.size());
+      for (auto &branch : branches) {
+        workers.push_back(
+            std::make_unique<OutputBranchWorker>(std::move(branch)));
+      }
 
       RuntimeMetadataReporter runtime_metadata;
       StatsReporter stats{stats_every};
@@ -1271,35 +1363,11 @@ int main(int argc, char **argv) {
       while (true) {
         const auto frame_started = std::chrono::steady_clock::now();
         auto source_frame = decoder.read_frame();
-        auto futures = std::vector<std::future<ProcessedBranchFrame>>{};
-        futures.reserve(branches.size());
-        for (std::size_t branch_index = 0; branch_index < branches.size();
-             ++branch_index) {
-          futures.push_back(std::async(
-              std::launch::async,
-              [branch_index, &branches, &source_frame]() {
-                auto &branch = branches[branch_index];
-                auto branch_frame = resize_cover_rgb24(
-                    source_frame,
-                    static_cast<std::uint32_t>(branch.config.output.width),
-                    static_cast<std::uint32_t>(branch.config.output.height));
-                branch.pipeline.process(branch_frame);
-                return ProcessedBranchFrame{branch_index,
-                                            std::move(branch_frame)};
-              }));
+        for (auto &worker : workers) {
+          worker->submit(source_frame);
         }
-
-        auto processed_frames = std::vector<std::optional<lmp::frame::Frame>>{};
-        processed_frames.resize(branches.size());
-        for (auto &future : futures) {
-          auto processed = future.get();
-          processed_frames[processed.branch_index] = std::move(processed.frame);
-        }
-        for (std::size_t branch_index = 0; branch_index < branches.size();
-             ++branch_index) {
-          auto &branch_frame = processed_frames[branch_index].value();
-          runtime_metadata.report(branch_frame.metadata());
-          branches[branch_index].output->write(branch_frame);
+        for (auto &worker : workers) {
+          runtime_metadata.report(worker->wait());
         }
 
         auto dropped_frames = std::uint64_t{0U};

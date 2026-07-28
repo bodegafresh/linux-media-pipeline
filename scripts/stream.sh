@@ -163,12 +163,18 @@ case "${mode}" in
   gopro-dual)
     horizontal_device="${1:-/dev/video20}"
     vertical_device="${2:-/dev/video21}"
-    horizontal_config="${3:-config/presets/dual-horizontal.yaml}"
-    vertical_config="${4:-config/presets/dual-vertical.yaml}"
     shift $(( $# >= 1 ? 1 : 0 ))
     shift $(( $# >= 1 ? 1 : 0 ))
-    shift $(( $# >= 1 ? 1 : 0 ))
-    shift $(( $# >= 1 ? 1 : 0 ))
+    horizontal_config="config/presets/dual-horizontal.yaml"
+    vertical_config="config/presets/dual-vertical.yaml"
+    if (( $# >= 1 )) && [[ "${1}" != --* ]]; then
+      horizontal_config="$1"
+      shift
+    fi
+    if (( $# >= 1 )) && [[ "${1}" != --* ]]; then
+      vertical_config="$1"
+      shift
+    fi
     horizontal_number="${horizontal_device#/dev/video}"
     vertical_number="${vertical_device#/dev/video}"
     if [[ "${horizontal_number}" == "${horizontal_device}" || "${vertical_number}" == "${vertical_device}" ]]; then

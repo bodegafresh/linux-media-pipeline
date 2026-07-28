@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -550,6 +551,11 @@ struct OutputBranch {
   std::string filters_active;
   std::string plan;
   std::unique_ptr<lmp::output::V4l2Output> output;
+};
+
+struct ProcessedBranchFrame {
+  std::size_t branch_index;
+  lmp::frame::Frame frame;
 };
 
 std::uint8_t bilinear_channel(std::span<const std::uint8_t> source,
@@ -1265,14 +1271,35 @@ int main(int argc, char **argv) {
       while (true) {
         const auto frame_started = std::chrono::steady_clock::now();
         auto source_frame = decoder.read_frame();
-        for (auto &branch : branches) {
-          auto branch_frame = resize_cover_rgb24(
-              source_frame,
-              static_cast<std::uint32_t>(branch.config.output.width),
-              static_cast<std::uint32_t>(branch.config.output.height));
-          branch.pipeline.process(branch_frame);
+        auto futures = std::vector<std::future<ProcessedBranchFrame>>{};
+        futures.reserve(branches.size());
+        for (std::size_t branch_index = 0; branch_index < branches.size();
+             ++branch_index) {
+          futures.push_back(std::async(
+              std::launch::async,
+              [branch_index, &branches, &source_frame]() {
+                auto &branch = branches[branch_index];
+                auto branch_frame = resize_cover_rgb24(
+                    source_frame,
+                    static_cast<std::uint32_t>(branch.config.output.width),
+                    static_cast<std::uint32_t>(branch.config.output.height));
+                branch.pipeline.process(branch_frame);
+                return ProcessedBranchFrame{branch_index,
+                                            std::move(branch_frame)};
+              }));
+        }
+
+        auto processed_frames = std::vector<std::optional<lmp::frame::Frame>>{};
+        processed_frames.resize(branches.size());
+        for (auto &future : futures) {
+          auto processed = future.get();
+          processed_frames[processed.branch_index] = std::move(processed.frame);
+        }
+        for (std::size_t branch_index = 0; branch_index < branches.size();
+             ++branch_index) {
+          auto &branch_frame = processed_frames[branch_index].value();
           runtime_metadata.report(branch_frame.metadata());
-          branch.output->write(branch_frame);
+          branches[branch_index].output->write(branch_frame);
         }
 
         auto dropped_frames = std::uint64_t{0U};

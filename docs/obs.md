@@ -122,19 +122,21 @@ The default dual presets are:
 
 - `config/presets/dual-horizontal.yaml`: `1280x720`, image background,
   `/dev/video20`.
-- `config/presets/dual-vertical.yaml`: `720x1280`, smart 9:16 crop reusing
-  the primary processed frame, `/dev/video21`.
+- `config/presets/dual-vertical.yaml`: `720x1280`, own background blur using
+  the shared AI mask from the horizontal branch, `/dev/video21`.
 
 Both outputs must use the same FPS to stay synchronized. The resolutions and
 filters can differ. In OBS, add two independent Video Capture Device sources:
 one for `/dev/video20` in a horizontal scene and one for `/dev/video21` in a
 vertical scene.
 
-The vertical branch reuses the primary AI/background result and then applies a
-smart 9:16 crop. The crop reads `segmentation_mask_bounds`, keeps headroom, and
-uses a dead zone plus motion inertia so it does not chase every small mask
-change. This keeps the vertical camera steadier while still following larger
-side-to-side movement.
+The horizontal branch runs ONNX once and publishes `shared_mask_id:
+dual-presenter`. The vertical branch uses `mask_mode: shared_onnx`, so it can
+apply a different background mode without paying for a second ONNX inference.
+For example, the default horizontal preset uses a static image while the default
+vertical preset uses real background blur. The crop still reads
+`segmentation_mask_bounds`, keeps headroom, and uses a dead zone plus motion
+inertia so it does not chase every small mask change.
 
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because

@@ -149,10 +149,11 @@ For simultaneous horizontal and vertical OBS sources from one GoPro stream:
 This decodes the camera once and writes two filtered outputs:
 `config/presets/dual-horizontal.yaml` to `/dev/video20` and
 `config/presets/dual-vertical.yaml` to `/dev/video21`.
-The default vertical output reuses the horizontal AI/background result and then
-applies a 9:16 smart crop with a safe-area dead zone and smooth motion, so the
-expensive segmentation step runs once per input frame instead of once per
-virtual camera.
+The horizontal branch runs ONNX once and publishes a shared presenter mask. The
+vertical branch consumes that mask with `mask_mode: shared_onnx`, so each output
+can use a different background mode without paying for a second ONNX inference.
+The default horizontal preset uses a static image; the default vertical preset
+uses background blur.
 
 The application prints active filters when streaming starts:
 

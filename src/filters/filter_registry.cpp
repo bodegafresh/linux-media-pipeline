@@ -225,7 +225,9 @@ FilterRegistry create_default_registry() {
             detail::double_parameter(config, "hint_y_offset", 0.0),
             detail::string_parameter(config, "background_mode", "blur"),
             detail::string_parameter(config, "background_path", ""),
-            detail::string_parameter(config, "background_color", "#1b1f2a"));
+            detail::string_parameter(config, "background_color", "#1b1f2a"),
+            detail::string_parameter(config, "shared_mask_id", ""),
+            detail::bool_parameter(config, "publish_shared_mask", false));
       });
   registry.register_filter(
       "auto_frame", [](const config::FilterConfig &config) {

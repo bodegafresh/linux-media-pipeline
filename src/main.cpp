@@ -441,6 +441,10 @@ public:
                 "segmentation_mask_cooldown_frames");
     report_once(metadata, "segmentation_mask_hint_coverage",
                 "segmentation_mask_hint_coverage");
+    report_once(metadata, "segmentation_mask_shared_id",
+                "segmentation_mask_shared_id");
+    report_once(metadata, "segmentation_mask_shared_published",
+                "segmentation_mask_shared_published");
     report_once(metadata, "segmentation_mask_coverage_refined",
                 "segmentation_mask_coverage_refined");
     report_once(metadata, "onnx_preprocess_ms", "onnx_preprocess_ms");

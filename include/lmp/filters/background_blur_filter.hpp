@@ -38,7 +38,9 @@ public:
                        double max_mask_coverage, double hint_y_offset,
                        std::string background_mode = "blur",
                        std::string background_path = "",
-                       std::string background_color = "#1b1f2a");
+                       std::string background_color = "#1b1f2a",
+                       std::string shared_mask_id = "",
+                       bool publish_shared_mask = false);
 
   void process(frame::Frame &frame) const override;
   [[nodiscard]] std::string_view type() const noexcept override;
@@ -81,6 +83,8 @@ private:
   std::string background_mode_;
   std::string background_path_;
   std::string background_color_;
+  std::string shared_mask_id_;
+  bool publish_shared_mask_;
   mutable std::unique_ptr<lmp::decoder::FfmpegDecoder> background_decoder_;
   mutable std::vector<std::uint8_t> static_background_;
   mutable std::string background_error_;

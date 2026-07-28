@@ -21,6 +21,8 @@ filters:
     target_fill: 0.56
     max_zoom: 1.10
     mask_mode: onnx
+    shared_mask_id: dual-presenter
+    publish_shared_mask: true
     model_path: assets/models/pphumanseg.onnx
     provider: cpu
     allow_provider_fallback: false
@@ -41,9 +43,9 @@ filters:
     background_mode: image
     background_path: assets/backgrounds/static-background.jpg
     background_color: x111827
-    brightness: 2
-    contrast: 1.05
-    saturation: 1.04
+    brightness: 4
+    contrast: 1.02
+    saturation: 1.06
 
 output:
   type: v4l2

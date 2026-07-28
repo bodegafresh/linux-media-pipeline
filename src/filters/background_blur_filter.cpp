@@ -11,10 +11,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -349,6 +351,36 @@ constexpr auto kMaxPreviousMaskReuses = 18U;
 constexpr auto kBadMaskStreakBeforeCooldown = 3U;
 constexpr auto kBadMaskCooldownFrames = 150U;
 
+std::mutex &shared_mask_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::unordered_map<std::string, ai::SegmentationMask> &shared_presenter_masks() {
+  static std::unordered_map<std::string, ai::SegmentationMask> masks;
+  return masks;
+}
+
+void publish_shared_mask(std::string_view id, const ai::SegmentationMask &mask) {
+  if (id.empty()) {
+    return;
+  }
+  const auto lock = std::lock_guard<std::mutex>{shared_mask_mutex()};
+  shared_presenter_masks().insert_or_assign(std::string{id}, mask);
+}
+
+std::optional<ai::SegmentationMask> consume_shared_mask(std::string_view id) {
+  if (id.empty()) {
+    return std::nullopt;
+  }
+  const auto lock = std::lock_guard<std::mutex>{shared_mask_mutex()};
+  const auto found = shared_presenter_masks().find(std::string{id});
+  if (found == shared_presenter_masks().end()) {
+    return std::nullopt;
+  }
+  return found->second;
+}
+
 struct AdaptiveMask {
   ai::SegmentationMask mask;
   std::uint8_t threshold;
@@ -648,7 +680,7 @@ Crop smooth_crop(Crop desired,
 }
 
 cl_uint opencl_mask_mode(std::string_view mode) {
-  if (mode == "onnx") {
+  if (mode == "onnx" || mode == "shared_onnx") {
     return 2U;
   }
   if (mode == "tracked_center") {
@@ -708,7 +740,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(std::uint32_t radius,
           radius, foreground_threshold, std::move(backend), brightness,
           contrast, saturation, false, 1.0, 1.0, "luminance", 0.28, 0.42,
           "assets/models/person-segmentation.onnx", 3U, 0.70, "tracked_center",
-          "", "", "auto", true, "CPU", 1U, 3U, false, false, 0.02, 0.85, 0.0) {}
+          "", "", "auto", true, "CPU", 1U, 3U, false, false, 0.02, 0.85, 0.0,
+          "blur", "", "#1b1f2a", "", false) {}
 
 BackgroundBlurFilter::BackgroundBlurFilter(
     std::uint32_t radius, std::uint8_t foreground_threshold,
@@ -723,7 +756,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
     bool keep_largest_component, double min_mask_coverage,
     double max_mask_coverage, double hint_y_offset,
     std::string background_mode, std::string background_path,
-    std::string background_color)
+    std::string background_color, std::string shared_mask_id,
+    bool publish_shared_mask)
     : radius_(radius), foreground_threshold_(foreground_threshold),
       backend_(std::move(backend)), brightness_(brightness),
       contrast_(contrast), saturation_(saturation), auto_frame_(auto_frame),
@@ -744,6 +778,8 @@ BackgroundBlurFilter::BackgroundBlurFilter(
       background_mode_(std::move(background_mode)),
       background_path_(std::move(background_path)),
       background_color_(std::move(background_color)),
+      shared_mask_id_(std::move(shared_mask_id)),
+      publish_shared_mask_(publish_shared_mask),
       onnx_error_reported_(false) {
   static_cast<void>(hint_y_offset);
   if (radius_ == 0U) {
@@ -773,9 +809,10 @@ BackgroundBlurFilter::BackgroundBlurFilter(
                                 "ordered values in [0, 1]");
   }
   if (mask_mode_ != "luminance" && mask_mode_ != "center" &&
-      mask_mode_ != "onnx") {
+      mask_mode_ != "onnx" && mask_mode_ != "shared_onnx") {
     throw std::invalid_argument(
-        "background_blur mask_mode must be luminance, center, or onnx");
+        "background_blur mask_mode must be luminance, center, onnx, or "
+        "shared_onnx");
   }
   if (fallback_mask_mode_ != "luminance" && fallback_mask_mode_ != "center" &&
       fallback_mask_mode_ != "tracked_center") {
@@ -822,6 +859,16 @@ BackgroundBlurFilter::BackgroundBlurFilter(
 
 std::optional<ai::SegmentationMask>
 BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
+  if (mask_mode_ == "shared_onnx") {
+    if (auto shared = consume_shared_mask(shared_mask_id_)) {
+      frame.metadata()["background_blur_mask"] = "shared_onnx";
+      frame.metadata()["segmentation_mask_shared_id"] = shared_mask_id_;
+      return shared;
+    }
+    frame.metadata()["background_blur_mask"] =
+        "shared_onnx_unavailable_" + fallback_mask_mode_;
+    return std::nullopt;
+  }
   if (mask_mode_ != "onnx") {
     return std::nullopt;
   }
@@ -1058,6 +1105,11 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
         "expand:" + std::to_string(mask_expand_) +
         ",feather:" + std::to_string(mask_feather_);
     last_good_person_mask_ = mask;
+    if (publish_shared_mask_) {
+      publish_shared_mask(shared_mask_id_, mask);
+      frame.metadata()["segmentation_mask_shared_id"] = shared_mask_id_;
+      frame.metadata()["segmentation_mask_shared_published"] = "true";
+    }
     last_good_person_mask_reuse_count_ = 0;
     bad_person_mask_streak_ = 0U;
     onnx_mask_cooldown_frames_ = 0U;

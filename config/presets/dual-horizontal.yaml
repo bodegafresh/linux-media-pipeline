@@ -28,8 +28,8 @@ filters:
     output_shape: 1x1x192x192
     inference_interval: 4
     mask_smoothing: 0.50
-    mask_expand: 8
-    mask_feather: 4
+    mask_expand: 3
+    mask_feather: 2
     keep_largest_component: true
     min_mask_coverage: 0.025
     max_mask_coverage: 0.36

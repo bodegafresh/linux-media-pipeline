@@ -83,10 +83,13 @@ __kernel void background_blur(__global const uchar *input,
   const uint mask_x = min((source_x * mask_width_px) / width, mask_width_px - 1U);
   const uint mask_y = min((source_y * mask_height_px) / height, mask_height_px - 1U);
   const uchar mask_value = mask[(mask_y * mask_width_px) + mask_x];
+  const float raw_mask_alpha =
+      clamp(((float)mask_value - (float)foreground_threshold) /
+                (255.0f - (float)foreground_threshold),
+            0.0f, 1.0f);
+  const float refined_mask_alpha = smoothstep(0.34f, 0.82f, raw_mask_alpha);
   const float foreground_alpha =
-      mask_mode == 2U ? clamp(((float)mask_value - (float)foreground_threshold) /
-                                  (255.0f - (float)foreground_threshold),
-                              0.0f, 1.0f)
+      mask_mode == 2U ? refined_mask_alpha
       : (mask_mode == 1U ? center_foreground_alpha
                          : (luma >= foreground_threshold ? 1.0f : 0.0f));
 
@@ -1199,6 +1202,10 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
            static_cast<double>(foreground_threshold_)) /
               (255.0 - static_cast<double>(foreground_threshold_)),
           0.0, 1.0);
+      const auto edge_alpha = std::clamp((alpha - 0.34) / (0.82 - 0.34),
+                                         0.0, 1.0);
+      const auto foreground_alpha =
+          edge_alpha * edge_alpha * (3.0 - (2.0 * edge_alpha));
       const auto background_pixel =
           replacement_background.empty()
               ? blurred[index]
@@ -1206,12 +1213,15 @@ void BackgroundBlurFilter::process_cpu(frame::Frame &frame) const {
                                  replacement_background[(index * 3U) + 1U],
                                  replacement_background[(index * 3U) + 2U]};
       auto pixel = detail::RgbPixel{
-          detail::clamp_to_byte((original[index].red * alpha) +
-                                (background_pixel.red * (1.0 - alpha))),
-          detail::clamp_to_byte((original[index].green * alpha) +
-                                (background_pixel.green * (1.0 - alpha))),
-          detail::clamp_to_byte((original[index].blue * alpha) +
-                                (background_pixel.blue * (1.0 - alpha)))};
+          detail::clamp_to_byte((original[index].red * foreground_alpha) +
+                                (background_pixel.red *
+                                 (1.0 - foreground_alpha))),
+          detail::clamp_to_byte((original[index].green * foreground_alpha) +
+                                (background_pixel.green *
+                                 (1.0 - foreground_alpha))),
+          detail::clamp_to_byte((original[index].blue * foreground_alpha) +
+                                (background_pixel.blue *
+                                 (1.0 - foreground_alpha)))};
       auto red = ((pixel.red - 128.0) * contrast_) + 128.0 + brightness_;
       auto green = ((pixel.green - 128.0) * contrast_) + 128.0 + brightness_;
       auto blue = ((pixel.blue - 128.0) * contrast_) + 128.0 + brightness_;

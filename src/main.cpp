@@ -657,7 +657,7 @@ lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
       const auto desired_center_y =
           desired_crop_y + (desired_crop_height / 2.0);
       const auto dead_zone =
-          std::max(12.0, 0.055 * std::min(previous[2], previous[3]));
+          std::max(18.0, 0.085 * std::min(previous[2], previous[3]));
       const auto center_delta_x = desired_center_x - previous_center_x;
       const auto center_delta_y = desired_center_y - previous_center_y;
       const auto needs_motion =
@@ -671,9 +671,9 @@ lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
         crop_width = previous[2];
         crop_height = previous[3];
       } else {
-        constexpr auto kResponse = 0.20;
-        const auto max_x_step = 0.040 * static_cast<double>(source.width());
-        const auto max_y_step = 0.040 * static_cast<double>(source.height());
+        constexpr auto kResponse = 0.12;
+        const auto max_x_step = 0.024 * static_cast<double>(source.width());
+        const auto max_y_step = 0.024 * static_cast<double>(source.height());
         const auto next_center_x =
             previous_center_x +
             std::clamp(center_delta_x * kResponse, -max_x_step, max_x_step);
@@ -864,7 +864,8 @@ private:
         branch_.pipeline.process(branch_frame);
         branch_frame = resize_cover_rgb24(
             branch_frame, static_cast<std::uint32_t>(branch_.config.output.width),
-            static_cast<std::uint32_t>(branch_.config.output.height));
+            static_cast<std::uint32_t>(branch_.config.output.height),
+            &branch_.previous_reuse_crop);
         branch_.output->write(branch_frame);
         auto lock = std::lock_guard<std::mutex>{mutex_};
         output_frame_ = std::move(branch_frame);

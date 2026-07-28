@@ -17,7 +17,7 @@ filters:
   - type: background_blur
     enabled: true
     backend: opencl
-    auto_frame: true
+    auto_frame: false
     target_fill: 0.62
     max_zoom: 1.16
     mask_mode: shared_onnx
@@ -27,8 +27,8 @@ filters:
     mask_height: 0.74
     mask_expand: 0
     mask_feather: 1
-    radius: 5
-    foreground_threshold: 128
+    radius: 4
+    foreground_threshold: 144
     background_mode: blur
     background_color: x111827
     brightness: 4

@@ -260,6 +260,7 @@ public:
   [[nodiscard]] cl_context context() const noexcept { return context_; }
   [[nodiscard]] cl_command_queue queue() const noexcept { return queue_; }
   [[nodiscard]] cl_kernel kernel() const noexcept { return kernel_; }
+  [[nodiscard]] std::mutex &mutex() noexcept { return mutex_; }
   [[nodiscard]] std::string_view platform_name() const noexcept {
     return platform_name_;
   }
@@ -338,6 +339,7 @@ private:
   cl_kernel kernel_ = nullptr;
   std::string platform_name_ = "unknown";
   std::string device_name_ = "unknown";
+  std::mutex mutex_;
   bool ready_ = false;
 };
 
@@ -1330,6 +1332,7 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
     active_mask_mode = fallback_mask_mode_;
   }
 
+  auto resource_lock = std::lock_guard<std::mutex>{resources.mutex()};
   cl_int error = CL_SUCCESS;
   cl_mem input = clCreateBuffer(resources.context(),
                                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
@@ -1382,8 +1385,8 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
   const auto saturation = static_cast<float>(saturation_);
   auto crop = Crop{0.0, 0.0, static_cast<double>(frame.width()),
                    static_cast<double>(frame.height())};
-  if (auto_frame_ && mask.has_value()) {
-    auto bounds = std::optional<Bounds>{};
+  auto bounds = std::optional<Bounds>{};
+  if (mask.has_value()) {
     bounds = mask_bounds(*mask, foreground_threshold_);
     if (bounds.has_value()) {
       bounds = scale_bounds(*bounds, mask->width(), mask->height(),
@@ -1392,9 +1395,11 @@ bool BackgroundBlurFilter::process_opencl(frame::Frame &frame) const {
           std::to_string(bounds->min_x) + "," + std::to_string(bounds->min_y) +
           "," + std::to_string(bounds->max_x - bounds->min_x + 1U) + "," +
           std::to_string(bounds->max_y - bounds->min_y + 1U);
-      crop = crop_from_bounds(*bounds, frame.width(), frame.height(),
-                              target_fill_, max_zoom_);
     }
+  }
+  if (auto_frame_ && bounds.has_value()) {
+    crop = crop_from_bounds(*bounds, frame.width(), frame.height(),
+                            target_fill_, max_zoom_);
   }
   if (auto_frame_) {
     crop = smooth_crop(crop, previous_auto_frame_crop_, frame.width(),

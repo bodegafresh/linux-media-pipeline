@@ -130,6 +130,11 @@ filters can differ. In OBS, add two independent Video Capture Device sources:
 one for `/dev/video20` in a horizontal scene and one for `/dev/video21` in a
 vertical scene.
 
+Set the OBS base/output FPS to `30` for these virtual cameras. The pipeline
+emits 30 fps; recording or streaming the same source at 60 fps makes OBS
+duplicate frames, which can look like small motion jitter even when the camera
+pipeline is stable.
+
 The horizontal branch runs ONNX once and publishes `shared_mask_id:
 dual-presenter`. The vertical branch uses `mask_mode: shared_onnx`, so it can
 apply a different background mode without paying for a second ONNX inference.
@@ -137,6 +142,11 @@ For example, the default horizontal preset uses a static image while the default
 vertical preset uses real background blur. The crop still reads
 `segmentation_mask_bounds`, keeps headroom, and uses a dead zone plus motion
 inertia so it does not chase every small mask change.
+
+For microphone sync, start with no audio offset. If a recording still feels
+slightly late or early, adjust the mic in **Advanced Audio Properties** by
+small steps only: `20 ms`, then `30 ms`. The expected A/V container difference
+for a healthy recording should stay below one 30 fps frame, roughly `33 ms`.
 
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because

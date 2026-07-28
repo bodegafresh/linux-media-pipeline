@@ -107,8 +107,7 @@ For a normal stream plus a reels/shorts layout, run one capture pipeline and two
 V4L2 outputs:
 
 ```bash
-./scripts/setup-loopback.sh 20 lmp-horizontal
-./scripts/setup-loopback.sh 21 lmp-vertical
+./scripts/setup-loopback.sh 20 lmp-horizontal 21 lmp-vertical
 ./scripts/stream.sh gopro-dual /dev/video20 /dev/video21
 ```
 

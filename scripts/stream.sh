@@ -169,8 +169,17 @@ case "${mode}" in
     shift $(( $# >= 1 ? 1 : 0 ))
     shift $(( $# >= 1 ? 1 : 0 ))
     shift $(( $# >= 1 ? 1 : 0 ))
-    ensure_loopback "${horizontal_device}"
-    ensure_loopback "${vertical_device}"
+    horizontal_number="${horizontal_device#/dev/video}"
+    vertical_number="${vertical_device#/dev/video}"
+    if [[ "${horizontal_number}" == "${horizontal_device}" || "${vertical_number}" == "${vertical_device}" ]]; then
+      echo "ERROR: output devices must look like /dev/videoN." >&2
+      exit 1
+    fi
+    if [[ ! -e "${horizontal_device}" || ! -e "${vertical_device}" ]]; then
+      ./scripts/setup-loopback.sh \
+        "${horizontal_number}" lmp-horizontal \
+        "${vertical_number}" lmp-vertical
+    fi
     ./scripts/build.sh
     echo "Streaming one GoPro UDP capture to two virtual cameras."
     echo "Horizontal: ${horizontal_device} using ${horizontal_config}."

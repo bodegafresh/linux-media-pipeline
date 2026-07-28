@@ -450,6 +450,45 @@ adaptive_top_coverage_mask(const ai::SegmentationMask &mask,
   return AdaptiveMask{std::move(recovered), threshold, coverage};
 }
 
+std::optional<AdaptiveMask>
+adaptive_presenter_mask(const ai::SegmentationMask &mask,
+                        double target_coverage,
+                        std::uint8_t minimum_threshold) {
+  if (mask.values().empty()) {
+    return std::nullopt;
+  }
+
+  const auto clamped_target = std::clamp(target_coverage, 0.04, 0.32);
+  std::vector<std::uint8_t> sorted{mask.values().begin(), mask.values().end()};
+  std::sort(sorted.begin(), sorted.end());
+  const auto threshold_index = static_cast<std::size_t>(std::clamp(
+      std::floor((1.0 - clamped_target) *
+                 static_cast<double>(sorted.size() - 1U)),
+      0.0, static_cast<double>(sorted.size() - 1U)));
+  const auto threshold = std::max(sorted[threshold_index], minimum_threshold);
+
+  std::vector<std::uint8_t> values;
+  values.reserve(mask.values().size());
+  for (const auto value : mask.values()) {
+    values.push_back(value >= threshold ? 255U : 0U);
+  }
+
+  auto tightened =
+      ai::SegmentationMask{mask.width(), mask.height(), std::move(values)};
+  constexpr auto kBinaryForegroundThreshold = std::uint8_t{180U};
+  const auto coverage =
+      ai::mask_coverage(tightened, kBinaryForegroundThreshold);
+  return AdaptiveMask{std::move(tightened), threshold, coverage};
+}
+
+bool mask_looks_overinclusive(const MaskQuality &quality, double coverage) {
+  const auto box_area = quality.width_fraction * quality.height_fraction;
+  const auto box_fill = box_area <= 0.0 ? 0.0 : coverage / box_area;
+  return coverage > 0.12 ||
+         (quality.width_fraction > 0.50 && quality.aspect > 0.72) ||
+         (box_fill > 0.42 && quality.width_fraction > 0.42);
+}
+
 #if LMP_HAS_OPENCL
 struct Bounds {
   std::uint32_t min_x;
@@ -928,6 +967,41 @@ BackgroundBlurFilter::person_mask(frame::Frame &frame) const {
             std::to_string(onnx_mask_cooldown_frames_);
       }
       return std::nullopt;
+    }
+    if (const auto quality = mask_quality(mask, foreground_threshold_)) {
+      frame.metadata()["segmentation_mask_quality"] =
+          mask_quality_summary(*quality);
+      if (mask_looks_overinclusive(*quality, usable_coverage)) {
+        constexpr auto kTightPresenterCoverage = 0.085;
+        constexpr auto kMinimumTightThreshold = std::uint8_t{170U};
+        if (auto tightened = adaptive_presenter_mask(
+                mask, kTightPresenterCoverage, kMinimumTightThreshold)) {
+          auto tightened_mask = std::move(tightened->mask);
+          if (keep_largest_component_) {
+            tightened_mask =
+                ai::largest_component_mask(tightened_mask,
+                                           foreground_threshold_);
+          }
+          const auto tightened_coverage =
+              ai::mask_coverage(tightened_mask, foreground_threshold_);
+          frame.metadata()["segmentation_mask_tight_threshold"] =
+              std::to_string(tightened->threshold);
+          frame.metadata()["segmentation_mask_coverage_tight"] =
+              std::to_string(tightened_coverage);
+          if (tightened_coverage >= min_mask_coverage_ &&
+              tightened_coverage <= max_mask_coverage_ &&
+              plausible_presenter_mask(tightened_mask,
+                                       foreground_threshold_)) {
+            mask = std::move(tightened_mask);
+            usable_coverage = tightened_coverage;
+            frame.metadata()["segmentation_mask_recovered"] =
+                "tight_presenter";
+          } else {
+            frame.metadata()["segmentation_mask_tight_rejected"] =
+                "shape_or_coverage";
+          }
+        }
+      }
     }
     if (const auto quality = mask_quality(mask, foreground_threshold_)) {
       frame.metadata()["segmentation_mask_quality"] =

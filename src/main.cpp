@@ -423,6 +423,12 @@ public:
                 "segmentation_mask_adaptive_threshold");
     report_once(metadata, "segmentation_mask_coverage_adaptive",
                 "segmentation_mask_coverage_adaptive");
+    report_once(metadata, "segmentation_mask_tight_threshold",
+                "segmentation_mask_tight_threshold");
+    report_once(metadata, "segmentation_mask_coverage_tight",
+                "segmentation_mask_coverage_tight");
+    report_once(metadata, "segmentation_mask_tight_rejected",
+                "segmentation_mask_tight_rejected");
     report_once(metadata, "segmentation_mask_recovered",
                 "segmentation_mask_recovered");
     report_once(metadata, "segmentation_mask_recovery_rejected",
@@ -1515,7 +1521,7 @@ int main(int argc, char **argv) {
         auto dropped_frames = std::uint64_t{0U};
         auto now = std::chrono::steady_clock::now();
         next_output_time += frame_period;
-        constexpr auto kMaxDropsPerIteration = 3U;
+        constexpr auto kMaxDropsPerIteration = 1U;
         while (now > next_output_time + frame_period &&
                dropped_frames < kMaxDropsPerIteration) {
           static_cast<void>(decoder.read_frame());

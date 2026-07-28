@@ -9,6 +9,7 @@
 #include "lmp/version.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cctype>
 #include <condition_variable>
@@ -577,35 +578,14 @@ struct OutputBranch {
   std::string filters_active;
   std::string plan;
   std::unique_ptr<lmp::output::V4l2Output> output;
+  std::optional<std::array<double, 4>> previous_reuse_crop;
 };
-
-std::uint8_t bilinear_channel(std::span<const std::uint8_t> source,
-                              std::uint32_t source_width,
-                              std::uint32_t source_height, double source_x,
-                              double source_y, std::size_t channel) {
-  source_x = std::clamp(source_x, 0.0, static_cast<double>(source_width - 1U));
-  source_y = std::clamp(source_y, 0.0, static_cast<double>(source_height - 1U));
-  const auto x0 = static_cast<std::uint32_t>(std::floor(source_x));
-  const auto y0 = static_cast<std::uint32_t>(std::floor(source_y));
-  const auto x1 = std::min(x0 + 1U, source_width - 1U);
-  const auto y1 = std::min(y0 + 1U, source_height - 1U);
-  const auto tx = source_x - static_cast<double>(x0);
-  const auto ty = source_y - static_cast<double>(y0);
-  const auto sample = [&](std::uint32_t x, std::uint32_t y) {
-    const auto index =
-        ((static_cast<std::size_t>(y) * source_width) + x) * 3U + channel;
-    return static_cast<double>(source[index]);
-  };
-  const auto top = (sample(x0, y0) * (1.0 - tx)) + (sample(x1, y0) * tx);
-  const auto bottom = (sample(x0, y1) * (1.0 - tx)) + (sample(x1, y1) * tx);
-  const auto value = (top * (1.0 - ty)) + (bottom * ty);
-  return static_cast<std::uint8_t>(
-      std::clamp(static_cast<int>(std::round(value)), 0, 255));
-}
 
 lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
                                      std::uint32_t target_width,
-                                     std::uint32_t target_height) {
+                                     std::uint32_t target_height,
+                                     std::optional<std::array<double, 4>>
+                                         *previous_crop = nullptr) {
   if (source.format() != lmp::frame::PixelFormat::Rgb) {
     throw std::runtime_error("multi-output resize requires RGB frames");
   }
@@ -654,32 +634,112 @@ lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
                           static_cast<double>(source.height()) - crop_height);
     }
   }
+  const auto desired_crop_x = crop_x;
+  const auto desired_crop_y = crop_y;
+  const auto desired_crop_width = crop_width;
+  const auto desired_crop_height = crop_height;
+  if (previous_crop != nullptr) {
+    if (previous_crop->has_value()) {
+      const auto previous = **previous_crop;
+      const auto previous_center_x = previous[0] + (previous[2] / 2.0);
+      const auto previous_center_y = previous[1] + (previous[3] / 2.0);
+      const auto desired_center_x = desired_crop_x + (desired_crop_width / 2.0);
+      const auto desired_center_y =
+          desired_crop_y + (desired_crop_height / 2.0);
+      const auto dead_zone =
+          std::max(12.0, 0.055 * std::min(previous[2], previous[3]));
+      const auto center_delta_x = desired_center_x - previous_center_x;
+      const auto center_delta_y = desired_center_y - previous_center_y;
+      const auto needs_motion =
+          std::abs(center_delta_x) > dead_zone ||
+          std::abs(center_delta_y) > dead_zone ||
+          std::abs(desired_crop_width - previous[2]) > dead_zone ||
+          std::abs(desired_crop_height - previous[3]) > dead_zone;
+      if (!needs_motion) {
+        crop_x = previous[0];
+        crop_y = previous[1];
+        crop_width = previous[2];
+        crop_height = previous[3];
+      } else {
+        constexpr auto kResponse = 0.20;
+        const auto max_x_step = 0.040 * static_cast<double>(source.width());
+        const auto max_y_step = 0.040 * static_cast<double>(source.height());
+        const auto next_center_x =
+            previous_center_x +
+            std::clamp(center_delta_x * kResponse, -max_x_step, max_x_step);
+        const auto next_center_y =
+            previous_center_y +
+            std::clamp(center_delta_y * kResponse, -max_y_step, max_y_step);
+        crop_width =
+            previous[2] +
+            std::clamp((desired_crop_width - previous[2]) * kResponse,
+                       -max_x_step, max_x_step);
+        crop_height =
+            previous[3] +
+            std::clamp((desired_crop_height - previous[3]) * kResponse,
+                       -max_y_step, max_y_step);
+        crop_width = std::clamp(crop_width, 1.0,
+                                static_cast<double>(source.width()));
+        crop_height = std::clamp(crop_height, 1.0,
+                                 static_cast<double>(source.height()));
+        crop_x =
+            std::clamp(next_center_x - (crop_width / 2.0), 0.0,
+                       static_cast<double>(source.width()) - crop_width);
+        crop_y =
+            std::clamp(next_center_y - (crop_height / 2.0), 0.0,
+                       static_cast<double>(source.height()) - crop_height);
+      }
+    }
+    *previous_crop = {crop_x, crop_y, crop_width, crop_height};
+  }
 
   auto output_bytes = std::vector<std::uint8_t>{};
   output_bytes.resize(static_cast<std::size_t>(target_width) * target_height *
                       3U);
   const auto input = source.data();
+  const auto source_width = source.width();
+  const auto source_height = source.height();
   for (std::uint32_t y = 0; y < target_height; ++y) {
-    const auto source_y =
+    const auto sample_y =
         crop_y + ((static_cast<double>(y) + 0.5) * crop_height /
                   static_cast<double>(target_height)) -
         0.5;
+    const auto clamped_y =
+        std::clamp(sample_y, 0.0, static_cast<double>(source_height - 1U));
+    const auto y0 = static_cast<std::uint32_t>(std::floor(clamped_y));
+    const auto y1 = std::min(y0 + 1U, source_height - 1U);
+    const auto ty = clamped_y - static_cast<double>(y0);
     for (std::uint32_t x = 0; x < target_width; ++x) {
-      const auto source_x =
+      const auto sample_x =
           crop_x + ((static_cast<double>(x) + 0.5) * crop_width /
                     static_cast<double>(target_width)) -
           0.5;
+      const auto clamped_x =
+          std::clamp(sample_x, 0.0, static_cast<double>(source_width - 1U));
+      const auto x0 = static_cast<std::uint32_t>(std::floor(clamped_x));
+      const auto x1 = std::min(x0 + 1U, source_width - 1U);
+      const auto tx = clamped_x - static_cast<double>(x0);
       const auto output_index =
           ((static_cast<std::size_t>(y) * target_width) + x) * 3U;
-      output_bytes[output_index] =
-          bilinear_channel(input, source.width(), source.height(), source_x,
-                           source_y, 0U);
-      output_bytes[output_index + 1U] =
-          bilinear_channel(input, source.width(), source.height(), source_x,
-                           source_y, 1U);
-      output_bytes[output_index + 2U] =
-          bilinear_channel(input, source.width(), source.height(), source_x,
-                           source_y, 2U);
+      const auto top_left =
+          ((static_cast<std::size_t>(y0) * source_width) + x0) * 3U;
+      const auto top_right =
+          ((static_cast<std::size_t>(y0) * source_width) + x1) * 3U;
+      const auto bottom_left =
+          ((static_cast<std::size_t>(y1) * source_width) + x0) * 3U;
+      const auto bottom_right =
+          ((static_cast<std::size_t>(y1) * source_width) + x1) * 3U;
+      for (std::size_t channel = 0; channel < 3U; ++channel) {
+        const auto top = (static_cast<double>(input[top_left + channel]) *
+                          (1.0 - tx)) +
+                         (static_cast<double>(input[top_right + channel]) * tx);
+        const auto bottom =
+            (static_cast<double>(input[bottom_left + channel]) * (1.0 - tx)) +
+            (static_cast<double>(input[bottom_right + channel]) * tx);
+        const auto value = (top * (1.0 - ty)) + (bottom * ty);
+        output_bytes[output_index + channel] = static_cast<std::uint8_t>(
+            std::clamp(static_cast<int>(std::round(value)), 0, 255));
+      }
     }
   }
 
@@ -688,6 +748,10 @@ lmp::frame::Frame resize_cover_rgb24(const lmp::frame::Frame &source,
                              std::to_string(source.height()) + "->" +
                              std::to_string(target_width) + "x" +
                              std::to_string(target_height);
+  metadata["resize_cover_crop"] = std::to_string(crop_x) + "," +
+                                  std::to_string(crop_y) + "," +
+                                  std::to_string(crop_width) + "," +
+                                  std::to_string(crop_height);
   return lmp::frame::Frame{
       target_width,
       target_height,
@@ -717,9 +781,11 @@ OutputBranch make_output_branch(lmp::config::AppConfig config,
   output->configure_rgb24(static_cast<std::uint32_t>(config.output.width),
                           static_cast<std::uint32_t>(config.output.height),
                           static_cast<std::uint32_t>(config.output.fps));
+  auto filters_active = active_filter_list(config.filters);
+  auto plan = pipeline_plan(config.filters);
   return OutputBranch{std::move(config), std::move(pipeline),
-                      active_filter_list(config.filters),
-                      pipeline_plan(config.filters), std::move(output)};
+                      std::move(filters_active), std::move(plan),
+                      std::move(output), std::nullopt};
 }
 
 class OutputBranchWorker {
@@ -761,7 +827,9 @@ public:
     if (!error_.empty()) {
       throw std::runtime_error(error_);
     }
-    return output_frame_.value();
+    auto result = std::move(*output_frame_);
+    output_frame_.reset();
+    return result;
   }
 
   [[nodiscard]] const OutputBranch &branch() const noexcept { return branch_; }
@@ -1438,7 +1506,8 @@ int main(int argc, char **argv) {
           auto branch_frame = resize_cover_rgb24(
               *primary_frame,
               static_cast<std::uint32_t>(branch.config.output.width),
-              static_cast<std::uint32_t>(branch.config.output.height));
+              static_cast<std::uint32_t>(branch.config.output.height),
+              &branch.previous_reuse_crop);
           runtime_metadata.report(branch_frame.metadata());
           branch.output->write(branch_frame);
         }

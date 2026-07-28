@@ -51,6 +51,10 @@ macOS local validation:
 ./build/dev/lmp --list-onnx-providers
 ```
 
+The default `dev` preset is optimized with debug symbols because the normal
+scripts are also used for live video. Use `cmake --preset debug` only when you
+need an unoptimized debugger build.
+
 To tune AI background blur locally on macOS, convert a captured frame to binary
 PPM and run the same preset through the diagnostic path:
 
@@ -145,6 +149,10 @@ For simultaneous horizontal and vertical OBS sources from one GoPro stream:
 This decodes the camera once and writes two filtered outputs:
 `config/presets/dual-horizontal.yaml` to `/dev/video20` and
 `config/presets/dual-vertical.yaml` to `/dev/video21`.
+The default vertical output reuses the horizontal AI/background result and then
+applies a 9:16 smart crop with a safe-area dead zone and smooth motion, so the
+expensive segmentation step runs once per input frame instead of once per
+virtual camera.
 
 The application prints active filters when streaming starts:
 

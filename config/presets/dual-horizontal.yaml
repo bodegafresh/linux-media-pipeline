@@ -26,17 +26,17 @@ filters:
     allow_provider_fallback: false
     input_shape: 1x3x192x192
     output_shape: 1x1x192x192
-    inference_interval: 8
-    mask_smoothing: 0.62
-    mask_expand: 3
-    mask_feather: 5
+    inference_interval: 4
+    mask_smoothing: 0.50
+    mask_expand: 8
+    mask_feather: 4
     keep_largest_component: true
     min_mask_coverage: 0.025
     max_mask_coverage: 0.36
     fallback_mask_mode: tracked_center
     mask_width: 0.44
     mask_height: 0.74
-    radius: 6
+    radius: 4
     foreground_threshold: 128
     background_mode: image
     background_path: assets/backgrounds/static-background.jpg

@@ -132,7 +132,9 @@ vertical scene.
 
 The vertical branch reuses the primary AI/background result and then applies a
 smart 9:16 crop. The crop reads `segmentation_mask_bounds`, keeps headroom, and
-tries to keep the visible body inside the portrait safe area.
+uses a dead zone plus motion inertia so it does not chase every small mask
+change. This keeps the vertical camera steadier while still following larger
+side-to-side movement.
 
 If the mask line says `onnx_unavailable_center`, OBS will still receive video,
 but the app is using the centered fallback because
